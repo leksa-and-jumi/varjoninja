@@ -1,6 +1,8 @@
 import '@fontsource/bangers/400.css';
 import '@fontsource/nunito/600.css';
 import '@fontsource/nunito/800.css';
+import '@fontsource/noto-sans-thai/thai-600.css';
+import '@fontsource/noto-sans-thai/thai-800.css';
 import './style.css';
 import * as THREE from 'three';
 import { Sounds } from './audio/sounds';
@@ -26,6 +28,7 @@ import { ATTACKS, Remotes } from './play/remotes';
 import { CAR_COLORS, CAR_MODELS, loadCarModels } from './render/carView';
 import { loadCharacterModel, type NinjaColors } from './render/characters';
 import { Hud } from './ui/hud';
+import { setLang, t } from './i18n';
 import { Menus } from './ui/menus';
 import { isTouchDevice, TouchControls } from './ui/touch';
 
@@ -36,6 +39,7 @@ async function main(): Promise<void> {
   const ui = document.getElementById('ui')!;
   const profile = loadProfile();
   let settings = loadSettings();
+  setLang(settings.language);
   const sounds = new Sounds();
   sounds.setVolume(settings.volume);
 
@@ -45,7 +49,7 @@ async function main(): Promise<void> {
     join: (code) => {
       const c = normalizeRoomCode(code);
       if (!isValidRoomCode(c)) {
-        menus.setJoinError('Koodi on muotoa NINJA-KUU-42');
+        menus.setJoinError(t('joinError'));
         return;
       }
       startPlaying(c);
@@ -68,6 +72,12 @@ async function main(): Promise<void> {
     click: () => {
       sounds.unlock();
       sounds.play('ui');
+    },
+    language: (l) => {
+      settings.language = l;
+      saveSettings(settings);
+      setLang(l);
+      hud.refreshTexts();
     },
     outfit: (open) => {
       if (open) {
@@ -151,9 +161,9 @@ async function main(): Promise<void> {
       game.world.roomSeed = roomSeed(code);
       room = new RoomClient(code, toNet(profile.colors), {
         status: (s) => {
-          if (s === 'open') hud.notify('Yhdistetty!', `Kerro kaverille koodi ${code}`, '👥');
-          if (s === 'closed') hud.notify('Yhteys katkesi', 'Yritetään uudelleen…', '📡');
-          if (s === 'full') hud.notify('Huone on täynnä', 'Pelataan yksin.', '🚪');
+          if (s === 'open') hud.notify(t('connected'), t('tellCode', { code }), '👥');
+          if (s === 'closed') hud.notify(t('disconnected'), t('retrying'), '📡');
+          if (s === 'full') hud.notify(t('roomFull'), t('playingAlone'), '🚪');
         },
         message: (m) => {
           const now = performance.now();
@@ -166,11 +176,11 @@ async function main(): Promise<void> {
               break;
             case 'join':
               remotes.add(m.id, m.colors);
-              hud.notify('Kaveri tuli peliin!', 'Ratkaiskaa rikoksia yhdessä.', '🥷');
+              hud.notify(t('friendJoined'), t('solveTogether'), '🥷');
               break;
             case 'leave':
               remotes.remove(m.id);
-              hud.notify('Kaveri lähti', '', '👋');
+              hud.notify(t('friendLeft'), '', '👋');
               break;
             case 'state':
               remotes.state(m.id, m.s, now);
@@ -186,10 +196,10 @@ async function main(): Promise<void> {
       });
       room.connect();
     } else if (code) {
-      hud.notify('Moninpeli ei ole käytössä', 'Pelataan yksin.', '📡');
+      hud.notify(t('noMultiplayer'), t('playingAlone'), '📡');
     }
     if (game.world.heroPoints === 0) {
-      hud.bigMessage('VARJOSAARI', 'Etsi rikoksia kartalta ja pysäytä roistot!');
+      hud.bigMessage('VARJOSAARI', t('welcome'));
     }
   }
 

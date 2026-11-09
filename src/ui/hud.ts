@@ -4,6 +4,7 @@ import { CITY, CITY_HALF, COMBAT, PLAYER } from '../config';
 import type { City } from '../logic/city';
 import { CRIME_INFO, heroRank, type Crime } from '../logic/crimes';
 import { clockText } from '../logic/daytime';
+import { t, type TextKey } from '../i18n';
 
 export interface HudState {
   hp: number;
@@ -105,23 +106,28 @@ export class Hud {
     this.cityMap = this.drawCityMap();
 
     this.abilities = el('div', 'abilities', this.root);
-    this.help = el(
-      'div',
-      'help',
-      this.root,
-      `<b>Ohjaus</b>
-      <div><kbd>WASD</kbd> liiku · <kbd>Shift</kbd> juokse</div>
-      <div><kbd>Välilyönti</kbd> hyppää (2× = voltti)</div>
-      <div><kbd>Oikea hiiri</kbd> / <kbd>E</kbd> köysi (pidä pohjassa)</div>
-      <div><kbd>Q</kbd> / <kbd>Rulla</kbd> vedä köydellä tähtäimeen</div>
-      <div><kbd>Vasen hiiri</kbd> isku · ilmassa = syöksypotku</div>
-      <div><kbd>R</kbd> shuriken · <kbd>G</kbd> savupommi</div>
-      <div><kbd>F</kbd> autoon / ulos · <kbd>M</kbd> kartta</div>
-      <div><kbd>H</kbd> piilota ohjeet · <kbd>Esc</kbd> tauko</div>`,
-    );
+    this.help = el('div', 'help', this.root);
+    this.refreshTexts();
     this.bigMap = el('canvas', 'bigmap hidden', this.root);
     this.bigMap.width = 900;
     this.bigMap.height = 900;
+  }
+
+  /** Re-draw the texts that don't change every frame (after a language change). */
+  refreshTexts(): void {
+    const lines: TextKey[] = [
+      'helpMove',
+      'helpJump',
+      'helpRope',
+      'helpZip',
+      'helpAttack',
+      'helpTools',
+      'helpCar',
+      'helpMisc',
+    ];
+    this.help.innerHTML =
+      `<b>${t('helpTitle')}</b>` + lines.map((k) => `<div>${t(k)}</div>`).join('');
+    this.lastPoints = -1;
   }
 
   show(on: boolean): void {
@@ -195,8 +201,9 @@ export class Hud {
     if (s.heroPoints !== this.lastPoints) {
       this.lastPoints = s.heroPoints;
       const r = heroRank(s.heroPoints);
-      this.points.innerHTML = `⭐ <b>${s.heroPoints}</b> <small>sankaripistettä</small>`;
-      this.rank.textContent = r.next ? `${r.title} · seuraava ${r.next}` : r.title;
+      this.points.innerHTML = `⭐ <b>${s.heroPoints}</b> <small>${t('heroPoints')}</small>`;
+      const title = t(`rank${r.rank}` as TextKey);
+      this.rank.textContent = r.next ? `${title} · ${t('nextRank', { n: r.next })}` : title;
     }
     if (s.wanted !== this.lastStars) {
       this.lastStars = s.wanted;
@@ -211,16 +218,14 @@ export class Hud {
       this.stars.classList.toggle('active', s.wanted > 0);
     }
     this.clock.textContent = `🕒 ${clockText(s.tod)} · 🥷 ${s.collected}/${s.totalCollectibles}`;
-    this.room.textContent = s.roomCode ? `👥 ${s.roomCode} · ${s.players} pelaajaa` : '';
+    this.room.textContent = s.roomCode
+      ? `👥 ${s.roomCode} · ${t('players', { n: s.players })}`
+      : '';
     this.flash.style.opacity = String(Math.min(0.6, s.hurt * 0.6));
     this.speedLines.style.opacity = String(Math.max(0, Math.min(0.8, (s.speed - 22) / 30)));
     this.crosshair.classList.toggle('target', s.aimTarget);
     this.crosshair.classList.toggle('hidden', s.driving);
-    this.prompt.textContent = s.driving
-      ? 'F – nouse autosta · Välilyönti – käsijarru'
-      : s.nearCar
-        ? 'F – hyppää autoon'
-        : '';
+    this.prompt.textContent = s.driving ? t('exitCarPrompt') : s.nearCar ? t('enterCarPrompt') : '';
     this.prompt.classList.toggle('hidden', !this.prompt.textContent);
     const sh = s.shurikenCooldown > 0 ? 'cool' : '';
     const sm = s.smokeCooldown > 0 ? 'cool' : '';

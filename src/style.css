@@ -19,7 +19,7 @@ body {
   overflow: hidden;
   background: #0b0d12;
   color: var(--text);
-  font-family: 'Nunito', system-ui, sans-serif;
+  font-family: 'Nunito', 'Noto Sans Thai', system-ui, sans-serif;
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
@@ -190,6 +190,23 @@ button {
   color: #7d808a;
 }
 
+.langs {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.screen .lang {
+  flex: 1;
+  padding: 9px 10px;
+  font-size: 16px;
+}
+
+.screen .lang.on {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.22);
+}
+
 .credits {
   margin-top: 26px;
   color: #80838d;
@@ -211,7 +228,7 @@ button {
 
 .panel h2 {
   margin: 0 0 6px;
-  font-family: 'Bangers', sans-serif;
+  font-family: 'Bangers', 'Noto Sans Thai', sans-serif;
   font-size: 40px;
   letter-spacing: 0.04em;
   font-weight: 400;
@@ -296,7 +313,7 @@ button {
 }
 
 .ko-text {
-  font-family: 'Bangers', sans-serif;
+  font-family: 'Bangers', 'Noto Sans Thai', sans-serif;
   font-size: 80px;
   color: var(--gold);
   text-shadow: 4px 4px 0 #000;
@@ -482,7 +499,7 @@ button {
 
 .popup b {
   display: block;
-  font-family: 'Bangers', sans-serif;
+  font-family: 'Bangers', 'Noto Sans Thai', sans-serif;
   font-size: 54px;
   font-weight: 400;
   color: var(--gold);
@@ -526,7 +543,7 @@ button {
 
 .big-message b {
   display: block;
-  font-family: 'Bangers', sans-serif;
+  font-family: 'Bangers', 'Noto Sans Thai', sans-serif;
   font-size: 72px;
   font-weight: 400;
   text-shadow: 4px 4px 0 var(--red);

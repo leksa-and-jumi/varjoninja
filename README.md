@@ -19,11 +19,16 @@ Pelin suunnitteli **Julius**. Ninjan värit saa valita itse 🎨.
 | `R`                  | Heitä shuriken                                  |
 | `G`                  | Savupommi (roistot hämmentyvät, poliisi hukkaa) |
 | `F`                  | Hyppää autoon / nouse autosta                   |
+| `C`                  | Autossa: lähikamera / kaukokamera               |
 | `M`                  | Iso kartta                                      |
 | `H`                  | Näytä / piilota ohjeet                          |
 | `Esc`                | Tauko                                           |
 
 Juokse seinää päin, niin ninja kiipeää ylös. Tabletilla on kosketusnapit.
+
+Autossa kamera pysyy auton takana ja näyttää tietä eteenpäin. Hiirellä voi katsoa sivuille, ja kamera palaa itsestään auton taakse.
+
+**Kieli:** päävalikosta voi valita suomen 🇫🇮, englannin 🇬🇧 tai thain 🇹🇭.
 
 ### Mitä kaupungissa tehdään
 

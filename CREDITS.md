@@ -16,6 +16,8 @@ Kaikki äänet syntetisoidaan Web Audiolla pelin koodissa (`src/audio/sounds.ts`
 - [Bangers](https://fonts.google.com/specimen/Bangers) – Vernon Adams, SIL Open Font License 1.1 (`@fontsource/bangers`)
 - [Nunito](https://fonts.google.com/specimen/Nunito) – Vernon Adams, Cyreal, Jacques Le Bailly, SIL Open Font License 1.1 (`@fontsource/nunito`)
 
+- [Noto Sans Thai](https://fonts.google.com/noto/specimen/Noto+Sans+Thai) – Google, SIL Open Font License 1.1 (`@fontsource/noto-sans-thai`)
+
 ## Kirjastot
 
 - [three.js](https://threejs.org/) – MIT

@@ -3,7 +3,8 @@
 import * as THREE from 'three';
 import { CITY, COMBAT, PEDS, PLAYER, POLICE, TRAFFIC } from '../config';
 import { isOnRoad, type City } from '../logic/city';
-import { activeCrimes, CRIME_INFO, type Crime } from '../logic/crimes';
+import { activeCrimes, CRIME_INFO, type Crime, type CrimeKind } from '../logic/crimes';
+import { t, type TextKey } from '../i18n';
 import { angleDiff, type Vec3 } from '../logic/geom';
 import {
   closestLoop,
@@ -98,6 +99,21 @@ interface CrimeScene {
   cat: THREE.Group | null;
   beacon: THREE.Mesh;
   announced: boolean;
+}
+
+const CRIME_TEXT: Record<CrimeKind, TextKey> = {
+  mugger: 'crimeMugger',
+  gang: 'crimeGang',
+  carThief: 'crimeCarThief',
+  cat: 'crimeCat',
+};
+
+export function crimeTitle(kind: CrimeKind): string {
+  return t(CRIME_TEXT[kind]);
+}
+
+function crimeHint(kind: CrimeKind): string {
+  return t(`${CRIME_TEXT[kind]}Hint` as TextKey);
 }
 
 const LOOK_CACHE = new Map<string, Look>();
@@ -272,11 +288,7 @@ export class World {
     this.wanted = Math.min(POLICE.maxStars, this.wanted + n);
     this.wantedTimer = 0;
     if (before === 0 && this.wanted > 0) {
-      this.cb.notify(
-        'Poliisi tulee!',
-        'Sankarit eivät satuta tavallisia ihmisiä. Pakene katoille tai heitä savupommi (G).',
-        '🚓',
-      );
+      this.cb.notify(t('policeComing'), t('policeComingText'), '🚓');
     }
   }
 
@@ -697,7 +709,7 @@ export class World {
     setState(thief, 'flee');
     const scene = this.scenes.get(crime);
     scene?.people.push(thief.id);
-    this.cb.notify('Auto pysähtyi!', 'Varas juoksee karkuun – ota hänet kiinni!', '🏃');
+    this.cb.notify(t('carStopped'), t('carStoppedText'), '🏃');
   }
 
   private spawnCrime(sc: CrimeScene, px: number, pz: number): void {
@@ -788,12 +800,15 @@ export class World {
     if (sc) {
       const info = CRIME_INFO[sc.crime.kind];
       if (byMe) {
-        this.cb.reward(info.reward, `${info.icon} ${info.title.replace('!', '')} – ratkaistu!`);
+        this.cb.reward(
+          info.reward,
+          t('solved', { icon: info.icon, title: crimeTitle(sc.crime.kind) }),
+        );
         this.cb.crimeSolved(id);
       } else {
         this.cb.notify(
-          'Kaveri hoiti sen!',
-          `${info.icon} ${info.title.replace('!', '')} on ratkaistu.`,
+          t('friendSolved'),
+          t('friendSolvedText', { icon: info.icon, title: crimeTitle(sc.crime.kind) }),
           '🤝',
         );
       }
@@ -848,7 +863,7 @@ export class World {
       if (!sc.announced) {
         sc.announced = true;
         const info = CRIME_INFO[c.kind];
-        this.cb.notify(info.title, info.hint, info.icon);
+        this.cb.notify(`${crimeTitle(c.kind)}!`, crimeHint(c.kind), info.icon);
       }
       const dist = Math.hypot(c.x - px, c.z - pz);
       if (!sc.spawned && dist < 160) this.spawnCrime(sc, px, pz);
@@ -960,7 +975,7 @@ export class World {
       if (p.runner && p.hp > 0 && d > 140) {
         // The thief got away.
         p.gone = true;
-        this.cb.notify('Varas pääsi karkuun', 'Ensi kerralla nopeammin!', '💨');
+        this.cb.notify(t('thiefEscaped'), t('thiefEscapedText'), '💨');
       }
       // Don't walk through the ninja.
       if (!this.driving && d < 0.7 && Math.abs(p.y - py) < 1.5 && p.state !== 'down') {
@@ -983,8 +998,7 @@ export class World {
       if (this.wantedTimer > POLICE.starDecay) {
         this.wantedTimer = 0;
         this.wanted--;
-        if (this.wanted === 0)
-          this.cb.notify('Poliisi luovutti', 'Muista: sankari suojelee kaikkia.', '😮‍💨');
+        if (this.wanted === 0) this.cb.notify(t('policeGaveUp'), t('policeGaveUpText'), '😮‍💨');
       }
     }
 
@@ -1171,7 +1185,7 @@ export class World {
           this.cb.sound('coin');
           this.cb.reward(
             25,
-            `Kultainen shuriken ${this.collected.size}/${this.city.collectibles.length}`,
+            t('goldenShuriken', { n: this.collected.size, total: this.city.collectibles.length }),
           );
         }
         q.setFromEuler(new THREE.Euler(0, this.time * 2 + i, 0));
