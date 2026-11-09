@@ -83,8 +83,9 @@ export class SkyView {
     this.sun.position.copy(focus).addScaledVector(lightDir, 400);
     this.sun.target.position.copy(focus);
     // Snap the shadow camera to texels so shadows don't shimmer while moving.
-    this.hemi.intensity = 0.25 + 0.3 * dayLight;
-    this.hemi.color.setRGB(0.75, 0.85, 1).lerp(new THREE.Color(0.25, 0.32, 0.55), s.night);
+    // Moonlit nights: dim but never pitch black.
+    this.hemi.intensity = 0.45 + 0.1 * dayLight;
+    this.hemi.color.setRGB(0.75, 0.85, 1).lerp(new THREE.Color(0.32, 0.4, 0.68), s.night);
     this.hemi.groundColor.setRGB(0.35, 0.32, 0.28).lerp(new THREE.Color(0.08, 0.08, 0.12), s.night);
 
     const fog = this.scene.fog as THREE.FogExp2;
