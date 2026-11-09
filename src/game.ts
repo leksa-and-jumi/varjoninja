@@ -325,7 +325,7 @@ export class Game {
     );
     this.ninja.setVisible(!this.world.driving);
 
-    this.rig.zoom = this.world.driving ? 3.5 : 0;
+    this.rig.zoom = 0;
     if (this.state === 'title') {
       // Slow turn around the ninja on the rooftop.
       this.rig.yaw += dt * 0.06;
@@ -337,7 +337,19 @@ export class Game {
       this.rig.pitch = 0.05;
       this.rig.zoom = -3;
     }
-    this.rig.update(dt, this.focusPoint(), this.paused ? 0 : p.speed);
+    const d = this.world.driving;
+    if (d && this.state === 'play') {
+      if (this.input.pressed('camera')) this.rig.toggleCarView();
+      this.rig.updateCar(dt, {
+        x: d.car.x,
+        y: d.car.y,
+        z: d.car.z,
+        yaw: d.car.yaw,
+        forwardSpeed: d.car.forwardSpeed,
+      });
+    } else {
+      this.rig.update(dt, this.focusPoint(), this.paused ? 0 : p.speed);
+    }
     const tod = timeOfDay(Date.now() + this.clockOffset(), this.timeOffset);
     this.sky.update(tod, this.focusPoint());
     const night = this.sky.state.night;

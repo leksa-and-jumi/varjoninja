@@ -13,6 +13,7 @@ export type Action =
   | 'shuriken'
   | 'smoke'
   | 'car'
+  | 'camera'
   | 'map'
   | 'pause';
 
@@ -31,6 +32,7 @@ const KEYS: Record<string, Action> = {
   KeyE: 'rope',
   KeyQ: 'zip',
   KeyF: 'car',
+  KeyC: 'camera',
   KeyR: 'shuriken',
   KeyG: 'smoke',
   KeyM: 'map',

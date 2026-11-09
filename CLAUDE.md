@@ -35,6 +35,8 @@ Tämä repo kuuluu Julius (7 v) ja Leo (10 v) -veljesten pelistudioon (GitHub-or
 - **Autot** (`public/models/car_*.glb`): sedan, taksi, poliisi, pakettiauto, urheiluauto. Materiaalien nimet (`paint`, `headlight`, `siren_red`…) korvataan pelissä; renkaat ovat omia objektejaan.
 - Mallien muutos: muokkaa `blender/build_models.py` ja aja `npm run models` (Blender asennettu Homebrew'lla: `/Applications/Blender.app`). Commitoi syntyneet `.glb`-tiedostot.
 - **Rikokset** tulevat kellosta ja huoneen siemenestä (`crimeForSlot`): kaikki saman huoneen pelaajat näkevät saman rikoksen samassa paikassa. Verkossa kulkee vain "ratkaistu".
+- **Kielet** (`src/i18n.ts`): suomi, englanti ja thai. Kaikki pelaajalle näkyvät tekstit haetaan `t('avain')`-funktiolla; uusi teksti lisätään kaikkiin kolmeen kieleen (testi tarkistaa). Kieli tallentuu asetuksiin. Thai-kirjaimet tulevat Noto Sans Thai -fontista. Mainostaulut kaupungissa ovat suomeksi (kaupungin omat mainokset).
+- **Autokamera** (`CameraRig.updateCar`, vakiot `CAR_CAMERA`): pysyy auton takana, katsoo nopeuden mukaan eteenpäin, palaa taakse kun hiirellä ei ole katsottu hetkeen. `C` vaihtaa lähi-/kaukokuvan.
 - **Päivä ja yö** tulevat kellosta (`timeOfDay`, vuorokausi 16 min), moninpelissä palvelimen kellosta.
 
 ## Cloudflare-kiintiö (tärkeä)

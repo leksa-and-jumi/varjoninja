@@ -90,6 +90,25 @@ export const CAMERA = {
   maxPitch: 1.25,
 } as const;
 
+/** Chase camera while driving. */
+export const CAR_CAMERA = {
+  /** Distance behind the car: close and far view (C switches). */
+  distances: [8.5, 13],
+  height: 1.7,
+  /** Looking slightly down at the car. */
+  pitch: 0.2,
+  /** How quickly the camera swings back behind the car. */
+  follow: 3.5,
+  /** Seconds after turning the camera by hand before it swings back. */
+  returnDelay: 1.4,
+  /** Look this many seconds of travel ahead of the car… */
+  lookAhead: 0.18,
+  /** …but at most this many metres. */
+  maxLookAhead: 6,
+  fov: 70,
+  speedFov: 16,
+} as const;
+
 export const COMBAT = {
   punchRange: 2.4,
   punchArc: 1.2,
