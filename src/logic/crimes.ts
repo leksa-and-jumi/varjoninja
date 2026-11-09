@@ -22,29 +22,12 @@ export interface Crime {
   endsAt: number;
 }
 
-export const CRIME_INFO: Record<
-  CrimeKind,
-  { title: string; hint: string; reward: number; icon: string }
-> = {
-  mugger: {
-    title: 'Laukkuvaras!',
-    hint: 'Ota varas kiinni ennen kuin hän pääsee karkuun.',
-    reward: 100,
-    icon: '👜',
-  },
-  gang: { title: 'Jengi riehuu!', hint: 'Pysäytä kaikki jengiläiset.', reward: 200, icon: '👊' },
-  carThief: {
-    title: 'Autovaras!',
-    hint: 'Pysäytä varastettu auto ja ota varas kiinni.',
-    reward: 250,
-    icon: '🚗',
-  },
-  cat: {
-    title: 'Kissa katolla!',
-    hint: 'Kiipeä katolle ja pelasta kissa.',
-    reward: 150,
-    icon: '🐱',
-  },
+/** Reward and map icon. Titles and hints are texts in src/i18n.ts (crime<Kind>, crime<Kind>Hint). */
+export const CRIME_INFO: Record<CrimeKind, { reward: number; icon: string }> = {
+  mugger: { reward: 100, icon: '👜' },
+  gang: { reward: 200, icon: '👊' },
+  carThief: { reward: 250, icon: '🚗' },
+  cat: { reward: 150, icon: '🐱' },
 };
 
 /** How many crime slots overlap (each crime lasts this many intervals). */
@@ -112,23 +95,13 @@ export function activeCrimes(
   return out;
 }
 
-/** Hero rank from total hero points. */
-export function heroRank(points: number): { title: string; next: number | null } {
-  const ranks: [number, string][] = [
-    [0, 'Ninjaoppilas'],
-    [300, 'Katujen suojelija'],
-    [900, 'Varjosoturi'],
-    [2000, 'Kaupungin sankari'],
-    [4000, 'Varjomestari'],
-    [8000, 'Legendaarinen Varjoninja'],
-  ];
-  let title = ranks[0]![1];
-  let next: number | null = null;
-  for (let i = 0; i < ranks.length; i++) {
-    if (points >= ranks[i]![0]) {
-      title = ranks[i]![1];
-      next = ranks[i + 1]?.[0] ?? null;
-    }
-  }
-  return { title, next };
+/** Hero rank (0..5) from total hero points; the names are texts rank0..rank5 in src/i18n.ts. */
+export const RANK_POINTS = [0, 300, 900, 2000, 4000, 8000];
+
+export function heroRank(points: number): { rank: number; next: number | null } {
+  let rank = 0;
+  RANK_POINTS.forEach((p, i) => {
+    if (points >= p) rank = i;
+  });
+  return { rank, next: RANK_POINTS[rank + 1] ?? null };
 }

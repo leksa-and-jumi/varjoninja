@@ -2,6 +2,7 @@
 
 import type { NinjaColors } from '../render/characters';
 import type { Settings } from '../data/storage';
+import { getLang, LANGS, t, type Lang } from '../i18n';
 
 export const SUIT_COLORS = [
   '#1b1c22',
@@ -39,6 +40,7 @@ export interface MenuActions {
   click(): void;
   /** The outfit screen opened (true) or closed (false). */
   outfit(open: boolean): void;
+  language(l: Lang): void;
 }
 
 function html(parent: HTMLElement, cls: string, inner: string): HTMLDivElement {
@@ -68,40 +70,21 @@ export class Menus {
     this.colors = { ...colors };
     this.settings = { ...settings };
 
-    this.loading = html(
-      parent,
-      'screen loading',
-      `<div class="logo">VARJONINJA</div><div class="spinner"></div><p>Rakennetaan kaupunkia…</p>`,
-    );
-
-    this.title = html(
-      parent,
-      'screen title hidden',
-      `<div class="title-box">
-        <div class="logo">VARJONINJA</div>
-        <p class="tagline">Varjosaaren kaupunki tarvitsee sankaria. 🥷</p>
-        <div class="buttons">
-          <button class="big" data-a="play">▶ Pelaa</button>
-          <button data-a="host">👥 Pelaa kaverin kanssa</button>
-          <form class="join"><input maxlength="14" placeholder="KAVERIN KOODI" autocomplete="off" spellcheck="false" /><button>Liity</button></form>
-          <div class="row">
-            <button data-a="outfit">🎨 Ninjan asu</button>
-            <button data-a="settings">⚙️ Asetukset</button>
-          </div>
-        </div>
-        <p class="credits">Suunnittelu: Julius · Tehty Varjosaaren pelistudiossa</p>
-      </div>`,
-    );
+    this.loading = html(parent, 'screen loading', '');
+    this.title = html(parent, 'screen title hidden', '');
     this.title.addEventListener('click', (e) => {
-      const a = (e.target as HTMLElement).closest('button')?.dataset['a'];
-      if (!a) return;
+      const b = (e.target as HTMLElement).closest('button');
+      const a = b?.dataset['a'];
+      if (!b || b.closest('form')) return;
       actions.click();
       if (a === 'play') actions.play();
       if (a === 'host') actions.host();
       if (a === 'outfit') this.showOutfit();
       if (a === 'settings') this.showSettings('title');
+      if (b.dataset['lang']) this.setLanguage(b.dataset['lang'] as Lang);
     });
-    this.title.querySelector('form')!.addEventListener('submit', (e) => {
+    // Delegated, so it keeps working after the title is re-rendered in another language.
+    this.title.addEventListener('submit', (e) => {
       e.preventDefault();
       const input = this.title.querySelector('input')!;
       const code = input.value.trim().toUpperCase();
@@ -109,19 +92,7 @@ export class Menus {
     });
 
     this.outfit = html(parent, 'screen outfit hidden', '');
-    this.renderOutfit();
-
-    this.pause = html(
-      parent,
-      'screen pause hidden',
-      `<div class="panel">
-        <h2>Tauko</h2>
-        <button class="big" data-a="resume">▶ Jatka</button>
-        <button data-a="outfit">🎨 Ninjan asu</button>
-        <button data-a="settings">⚙️ Asetukset</button>
-        <button data-a="quit">🏠 Päävalikkoon</button>
-      </div>`,
-    );
+    this.pause = html(parent, 'screen pause hidden', '');
     this.pause.addEventListener('click', (e) => {
       const a = (e.target as HTMLElement).closest('button')?.dataset['a'];
       if (!a) return;
@@ -131,13 +102,51 @@ export class Menus {
       if (a === 'outfit') this.showOutfit('pause');
       if (a === 'settings') this.showSettings('pause');
     });
-
     this.settingsPanel = html(parent, 'screen settings hidden', '');
-    this.ko = html(
-      parent,
-      'screen ko hidden',
-      `<div class="ko-text">Tyrmätty! 💫</div><p>Ninja herää katolta…</p>`,
-    );
+    this.ko = html(parent, 'screen ko hidden', '');
+    this.renderTexts();
+  }
+
+  /** Fill every menu with texts in the current language. */
+  renderTexts(): void {
+    this.loading.innerHTML = `<div class="logo">VARJONINJA</div><div class="spinner"></div><p>${t('loading')}</p>`;
+    const typed = this.title.querySelector('input')?.value ?? '';
+    const lang = getLang();
+    this.title.innerHTML = `<div class="title-box">
+        <div class="logo">VARJONINJA</div>
+        <p class="tagline">${t('tagline')}</p>
+        <div class="buttons">
+          <button class="big" data-a="play">${t('play')}</button>
+          <button data-a="host">${t('host')}</button>
+          <form class="join"><input maxlength="14" placeholder="${t('joinPlaceholder')}" autocomplete="off" spellcheck="false" /><button type="submit">${t('join')}</button></form>
+          <div class="row">
+            <button data-a="outfit">${t('outfitButton')}</button>
+            <button data-a="settings">${t('settingsButton')}</button>
+          </div>
+          <div class="langs" aria-label="${t('language')}">${LANGS.map(
+            (l) =>
+              `<button class="lang ${l.id === lang ? 'on' : ''}" data-lang="${l.id}">${l.flag} ${l.label}</button>`,
+          ).join('')}</div>
+        </div>
+        <p class="credits">${t('credits')}</p>
+      </div>`;
+    this.title.querySelector('input')!.value = typed;
+    this.pause.innerHTML = `<div class="panel">
+        <h2>${t('pauseTitle')}</h2>
+        <button class="big" data-a="resume">${t('resume')}</button>
+        <button data-a="outfit">${t('outfitButton')}</button>
+        <button data-a="settings">${t('settingsButton')}</button>
+        <button data-a="quit">${t('quit')}</button>
+      </div>`;
+    this.ko.innerHTML = `<div class="ko-text">${t('koTitle')}</div><p>${t('koText')}</p>`;
+    this.renderOutfit();
+    if (!this.settingsPanel.classList.contains('hidden')) this.showSettings(this.back);
+  }
+
+  private setLanguage(l: Lang): void {
+    this.settings.language = l;
+    this.actions.language(l);
+    this.renderTexts();
   }
 
   private back: 'title' | 'pause' = 'title';
@@ -194,11 +203,11 @@ export class Menus {
         )
         .join('')}</div></div>`;
     this.outfit.innerHTML = `<div class="panel side">
-      <h2>🎨 Ninjan asu</h2>
-      ${row('Asu', 'suit', SUIT_COLORS)}
-      ${row('Huivi ja vyö', 'accent', ACCENT_COLORS)}
-      ${row('Naamio', 'mask', SUIT_COLORS)}
-      <button class="big" data-a="done">✔ Valmis</button>
+      <h2>${t('outfitTitle')}</h2>
+      ${row(t('outfitSuit'), 'suit', SUIT_COLORS)}
+      ${row(t('outfitAccent'), 'accent', ACCENT_COLORS)}
+      ${row(t('outfitMask'), 'mask', SUIT_COLORS)}
+      <button class="big" data-a="done">${t('done')}</button>
     </div>`;
     this.outfit.onclick = (e) => {
       const b = (e.target as HTMLElement).closest('button');
@@ -224,14 +233,19 @@ export class Menus {
     const s = this.settings;
     const q = (v: Settings['quality'], label: string) =>
       `<button class="${s.quality === v ? 'on' : ''}" data-q="${v}">${label}</button>`;
+    const langs = LANGS.map(
+      (l) =>
+        `<button class="${s.language === l.id ? 'on' : ''}" data-lang="${l.id}">${l.flag} ${l.label}</button>`,
+    ).join('');
     this.settingsPanel.innerHTML = `<div class="panel">
-      <h2>⚙️ Asetukset</h2>
-      <div class="setting"><span>Grafiikka</span><div class="seg">${q('low', 'Kevyt')}${q('medium', 'Keski')}${q('high', 'Hieno')}</div></div>
-      <div class="setting"><span>Äänet</span><input type="range" min="0" max="1" step="0.05" value="${s.volume}" data-s="volume" /></div>
-      <div class="setting"><span>Hiiren herkkyys</span><input type="range" min="0.3" max="2.5" step="0.05" value="${s.sensitivity}" data-s="sensitivity" /></div>
-      <div class="setting"><span>Ohjeet näkyvissä</span><div class="seg"><button class="${s.showHelp ? 'on' : ''}" data-h="1">Kyllä</button><button class="${!s.showHelp ? 'on' : ''}" data-h="0">Ei</button></div></div>
-      <p class="note">Grafiikan muutos tulee voimaan, kun sivu ladataan uudelleen.</p>
-      <button class="big" data-a="done">✔ Valmis</button>
+      <h2>${t('settingsTitle')}</h2>
+      <div class="setting"><span>${t('language')}</span><div class="seg">${langs}</div></div>
+      <div class="setting"><span>${t('graphics')}</span><div class="seg">${q('low', t('qualityLow'))}${q('medium', t('qualityMedium'))}${q('high', t('qualityHigh'))}</div></div>
+      <div class="setting"><span>${t('sound')}</span><input type="range" min="0" max="1" step="0.05" value="${s.volume}" data-s="volume" /></div>
+      <div class="setting"><span>${t('sensitivity')}</span><input type="range" min="0.3" max="2.5" step="0.05" value="${s.sensitivity}" data-s="sensitivity" /></div>
+      <div class="setting"><span>${t('showHelp')}</span><div class="seg"><button class="${s.showHelp ? 'on' : ''}" data-h="1">${t('yes')}</button><button class="${!s.showHelp ? 'on' : ''}" data-h="0">${t('no')}</button></div></div>
+      <p class="note">${t('graphicsNote')}</p>
+      <button class="big" data-a="done">${t('done')}</button>
     </div>`;
     this.settingsPanel.classList.remove('hidden');
     this.settingsPanel.onclick = (e) => {
@@ -240,6 +254,10 @@ export class Menus {
       this.actions.click();
       if (b.dataset['a'] === 'done') {
         this.closeSub();
+        return;
+      }
+      if (b.dataset['lang']) {
+        this.setLanguage(b.dataset['lang'] as Lang);
         return;
       }
       if (b.dataset['q']) s.quality = b.dataset['q'] as Settings['quality'];

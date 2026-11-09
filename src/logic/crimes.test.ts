@@ -19,7 +19,8 @@ describe('crimes', () => {
   });
 
   it('ranks grow with hero points', () => {
-    expect(heroRank(0).title).toBe('Ninjaoppilas');
+    expect(heroRank(0).rank).toBe(0);
+    expect(heroRank(950)).toEqual({ rank: 2, next: 2000 });
     expect(heroRank(10000).next).toBeNull();
   });
 });
