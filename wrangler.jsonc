@@ -1,0 +1,16 @@
+// Cloudflare Worker + Durable Objects for playing with a friend.
+// Local:  npm run dev:room    Deploy: npm run room:deploy
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "varjoninja-huoneet",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [{ "name": "ROOM", "class_name": "Room" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "vars": {
+    "ALLOWED_ORIGINS": "https://leksa-and-jumi.github.io,http://localhost:5181,http://127.0.0.1:5181",
+  },
+}
