@@ -228,9 +228,9 @@ const WORDS = [
   'NINJA',
   'VARJO',
   'KUU',
-  'TÄHTI',
+  'TAHTI',
   'KATTO',
-  'KÖYSI',
+  'KOYSI',
   'SALAMA',
   'TUULI',
   'KETTU',
@@ -249,8 +249,19 @@ export function makeRoomCode(rand: () => number = Math.random): string {
   return `${w()}-${w()}-${n}`;
 }
 
+/**
+ * Clean up a typed code: upper case, Ä→A and Ö→O (older codes had them, and they are easy to
+ * type without), spaces and other separators become single dashes.
+ */
 export function normalizeRoomCode(code: string): string {
-  return code.trim().toUpperCase().replace(/\s+/g, '-');
+  return code
+    .trim()
+    .toUpperCase()
+    .replace(/Ä/g, 'A')
+    .replace(/Ö/g, 'O')
+    .replace(/Å/g, 'A')
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 export function isValidRoomCode(code: string): boolean {
