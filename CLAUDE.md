@@ -45,7 +45,7 @@ Tämä repo kuuluu Julius (7 v) ja Leo (10 v) -veljesten pelistudioon (GitHub-or
 
 ## Grafiikan laatu
 
-- `QUALITY` (game.ts): *Kevyt* ilman varjoja, *Keski* 2048-varjokartta, *Hieno* 4096-varjokartta (140 m alue) + GTAO-kulmavarjostus puolella tarkkuudella. Varjokamera napsahtaa tekseleihin (ei välkettä).
+- `QUALITY` (game.ts): _Kevyt_ ilman varjoja, _Keski_ 2048-varjokartta, _Hieno_ 4096-varjokartta (140 m alue) + GTAO-kulmavarjostus puolella tarkkuudella. Varjokamera napsahtaa tekseleihin (ei välkettä).
 - Kaupungin realismi on shaderissa (`materials.ts`): ikkunakarmit, ikkunalaudat, syvennyksen varjo, verhot, sadevanat, katutason lika ja paneelisaumat. Katoilla on reunamuurit (`PARAPET`, myös törmäyksissä).
 
 ## Cloudflare-kiintiö (tärkeä)
