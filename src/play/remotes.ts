@@ -5,14 +5,18 @@ import { MODES, type NetColors, type NetState } from '../logic/protocol';
 import { CarView, CAR_COLORS, CAR_MODELS } from '../render/carView';
 import { NinjaView } from '../render/ninjaView';
 import type { Mode } from '../logic/player';
-import type { AnimInput } from '../render/animator';
+import type { AttackMove } from '../render/animator';
 
-const ATTACKS: NonNullable<AnimInput['attack']>['move'][] = [
+/** Attack index on the wire → move (append only: the index is sent between players). */
+const ATTACKS: AttackMove[] = [
   'punchR',
   'punchL',
   'kick',
   'throw',
   'diveKick',
+  'tornado',
+  'dash',
+  'uppercut',
 ];
 
 interface Snapshot {
@@ -149,7 +153,8 @@ export class Remotes {
       }
       r.view.setVisible(!driving);
       if (r.car) r.car.update(r.pos.x, r.pos.y, r.pos.z, r.yaw, Math.hypot(s.vx, s.vz), 0, dt);
-      const attackT = (now - r.attackStart) / 450;
+      // Finishing moves (index 5+) last about twice as long as a punch.
+      const attackT = (now - r.attackStart) / (s.attack >= 5 ? 900 : 450);
       r.view.update(
         {
           pos: r.pos.clone(),

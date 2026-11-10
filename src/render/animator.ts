@@ -19,6 +19,10 @@ export type AnimMode =
   | 'panic'
   | 'cower';
 
+/** Hits, throws and the three finishing moves. */
+export type AttackMove =
+  'punchR' | 'punchL' | 'kick' | 'throw' | 'diveKick' | 'tornado' | 'dash' | 'uppercut';
+
 export interface AnimInput {
   mode: AnimMode;
   /** Gait phase in radians (advance with distance travelled). */
@@ -32,7 +36,7 @@ export interface AnimInput {
   /** 0..1 progress of a front flip (double jump). */
   flip?: number;
   /** Current attack: which move and 0..1 progress. */
-  attack?: { move: 'punchR' | 'punchL' | 'kick' | 'throw' | 'diveKick'; t: number };
+  attack?: { move: AttackMove; t: number };
   /** 0..1, flinch after being hit. */
   hurt?: number;
   /** Ninja style (arms back when sprinting) versus normal people. */
@@ -318,6 +322,60 @@ function applyAttack(pose: Pose, move: NonNullable<AnimInput['attack']>['move'],
       pose['upperArm.R'] = s > 0 ? aimArm('R', v(-0.1, 0.25, 1)) : aimArm('R', v(-0.6, 0.6, -0.4));
       pose['forearm.R'] = rot(s > 0 ? 0 : -1.2);
       pose.chest = rot(0, -0.4 * s + 0.5 * w);
+      break;
+    case 'tornado':
+      // Spinning kick: one leg straight out to the side, arms wide (the spin is added by NinjaView).
+      pose['thigh.R'] = rot(-0.3, 0, -1.45);
+      pose['shin.R'] = rot(0.05);
+      pose['thigh.L'] = rot(-1.1);
+      pose['shin.L'] = rot(1.7);
+      pose['upperArm.L'] = rot(0, 0, 1.3);
+      pose['upperArm.R'] = rot(0, 0, -1.3);
+      pose.spine = rot(0, 0, 0.35);
+      break;
+    case 'dash':
+      if (t < 0.2) {
+        // Crouch, ready to spring.
+        pose['thigh.L'] = rot(-1.1);
+        pose['thigh.R'] = rot(-0.6);
+        pose['shin.L'] = rot(1.7);
+        pose['shin.R'] = rot(1.6);
+        pose['upperArm.L'] = rot(1.2, 0, -0.3);
+        pose['upperArm.R'] = rot(1.2, 0, 0.3);
+        pose.spine = rot(0.7);
+      } else {
+        // Lunge and slash.
+        pose['thigh.L'] = rot(-1.2);
+        pose['shin.L'] = rot(0.8);
+        pose['thigh.R'] = rot(0.7);
+        pose['shin.R'] = rot(0.4);
+        pose['upperArm.R'] = aimArm('R', v(-0.15, 0.05, 1));
+        pose['forearm.R'] = rot(0);
+        pose['upperArm.L'] = rot(1.1, 0, -0.4);
+        pose.spine = rot(0.55);
+        pose.head = rot(-0.4);
+      }
+      break;
+    case 'uppercut':
+      if (t < 0.22) {
+        pose['thigh.L'] = rot(-1.1);
+        pose['thigh.R'] = rot(-1.1);
+        pose['shin.L'] = rot(1.9);
+        pose['shin.R'] = rot(1.9);
+        pose['upperArm.R'] = rot(0.8, 0, 0.2);
+        pose['forearm.R'] = rot(-1.6);
+        pose.spine = rot(0.5);
+      } else {
+        // Fist to the sky, one knee up.
+        pose['upperArm.R'] = aimArm('R', v(-0.12, 1, 0.25));
+        pose['forearm.R'] = rot(0);
+        pose['upperArm.L'] = rot(0.4, 0, 0.6);
+        pose['thigh.L'] = rot(-1.5);
+        pose['shin.L'] = rot(1.7);
+        pose['thigh.R'] = rot(0.15);
+        pose.spine = rot(-0.2);
+        pose.head = rot(-0.3);
+      }
       break;
   }
 }

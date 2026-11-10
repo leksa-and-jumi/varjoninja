@@ -128,6 +128,15 @@ async function main(): Promise<void> {
       saveProfile(profile);
       room?.solved(id);
     },
+    finisher: (kind) => {
+      const key =
+        kind === 'tornado'
+          ? 'finisherTornado'
+          : kind === 'dash'
+            ? 'finisherDash'
+            : 'finisherUppercut';
+      hud.finisher(t(key));
+    },
     knockedOut: () => {
       menus.showKo(true);
       setTimeout(() => menus.showKo(false), 2500);

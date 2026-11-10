@@ -679,6 +679,57 @@ kbd {
   padding: 0 5px;
 }
 
+.finisher-text {
+  position: absolute;
+  top: 28%;
+  width: 100%;
+  text-align: center;
+  font-family: 'Bangers', 'Noto Sans Thai', sans-serif;
+  font-size: clamp(48px, 9vw, 110px);
+  color: var(--gold);
+  letter-spacing: 0.04em;
+  text-shadow:
+    5px 5px 0 var(--red),
+    10px 10px 0 rgba(0, 0, 0, 0.7);
+  animation: finisher-pop 1.5s ease-out forwards;
+}
+
+@keyframes finisher-pop {
+  0% {
+    opacity: 0;
+    transform: scale(2.4) rotate(-8deg);
+  }
+  12% {
+    opacity: 1;
+    transform: scale(0.95) rotate(-4deg);
+  }
+  20% {
+    transform: scale(1.05) rotate(-4deg);
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.1) rotate(-4deg) translateY(-30px);
+  }
+}
+
+.hurt-flash.white {
+  animation: white-flash 0.35s ease-out;
+}
+
+@keyframes white-flash {
+  0% {
+    opacity: 1;
+    background: rgba(255, 255, 240, 0.75);
+  }
+  100% {
+    opacity: 0;
+    background: rgba(255, 255, 240, 0);
+  }
+}
+
 .hurt-flash {
   position: absolute;
   inset: 0;

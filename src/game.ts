@@ -69,8 +69,11 @@ export class Game {
     crimeSolved: () => {},
     shake: () => {},
     playerKnockedOut: () => {},
+    finisher: () => {},
     knockedOut: () => {},
   };
+  /** Camera comes closer during a finishing move. */
+  private finisherZoom = 0;
   private koTimer = 0;
   /** Listeners for step events (sounds, effects). */
   onEvents: ((ev: StepEvents) => void)[] = [];
@@ -120,6 +123,7 @@ export class Game {
       crimeSolved: (id) => this.callbacks.crimeSolved(id),
       shake: (a) => this.rig.addShake(a),
       playerKnockedOut: () => this.knockedOut(),
+      finisher: (kind) => this.callbacks.finisher(kind),
     };
     this.world = new World(this.scene, this.city, this.fx, cb);
     this.respawn();
@@ -250,10 +254,21 @@ export class Game {
 
   frame(): void {
     const now = performance.now();
-    const dt = Math.min(0.05, (now - this.last) / 1000);
+    const realDt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
-    this.elapsed += dt;
+    this.elapsed += realDt;
     this.readInput();
+    // Game time runs slower right after a finishing move lands (slow motion).
+    const dt = realDt * this.world.timeScale;
+    if (this.world.finisher) {
+      // The finishing move moves the ninja; the player just watches.
+      const pi = this.playerInput;
+      pi.moveX = 0;
+      pi.moveZ = 0;
+      pi.jumpPressed = false;
+      pi.ropeHeld = false;
+      pi.zipPressed = false;
+    }
 
     if (this.koTimer > 0) {
       this.koTimer -= dt;
@@ -325,7 +340,9 @@ export class Game {
     );
     this.ninja.setVisible(!this.world.driving);
 
-    this.rig.zoom = 0;
+    this.finisherZoom +=
+      ((this.world.finisher ? -2.2 : 0) - this.finisherZoom) * Math.min(1, realDt * 5);
+    this.rig.zoom = this.finisherZoom;
     if (this.state === 'title') {
       // Slow turn around the ninja on the rooftop.
       this.rig.yaw += dt * 0.06;

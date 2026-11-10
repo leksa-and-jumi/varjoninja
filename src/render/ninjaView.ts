@@ -232,6 +232,11 @@ export class NinjaView {
     const q = lean.multiply(
       new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), this.pitch),
     );
+    // Tornado kick: two full spins.
+    if (s.attack?.move === 'tornado' && s.attack.t > 0.05 && s.attack.t < 0.65) {
+      const spin = ((s.attack.t - 0.05) / 0.6) * Math.PI * 4;
+      q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), spin));
+    }
     body.quaternion.copy(q);
     body.position.set(0, pivot, 0).sub(new THREE.Vector3(0, pivot, 0).applyQuaternion(q));
     if (mode === 'swim') body.position.y += 0.9;
