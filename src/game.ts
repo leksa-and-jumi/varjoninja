@@ -21,12 +21,14 @@ export interface Quality {
   pixelRatio: number;
   shadows: number;
   samples: number;
+  /** Ambient occlusion (soft shadows in corners): costs one extra scene pass. */
+  ao: boolean;
 }
 
 export const QUALITY: Record<'low' | 'medium' | 'high', Quality> = {
-  low: { pixelRatio: 0.75, shadows: 0, samples: 0 },
-  medium: { pixelRatio: 1, shadows: 1024, samples: 2 },
-  high: { pixelRatio: Math.min(window.devicePixelRatio, 2), shadows: 2048, samples: 4 },
+  low: { pixelRatio: 0.75, shadows: 0, samples: 0, ao: false },
+  medium: { pixelRatio: 1, shadows: 2048, samples: 2, ao: false },
+  high: { pixelRatio: Math.min(window.devicePixelRatio, 1.5), shadows: 4096, samples: 4, ao: true },
 };
 
 const FIXED_DT = 1 / 120;
@@ -106,7 +108,7 @@ export class Game {
     this.cityView = buildCityView(this.city);
     this.scene.add(this.cityView.root);
     this.sky = new SkyView(this.scene, this.renderer, quality.shadows);
-    this.post = new PostFx(this.renderer, this.scene, this.camera, quality.samples);
+    this.post = new PostFx(this.renderer, this.scene, this.camera, quality.samples, quality.ao);
     this.rig = new CameraRig(this.camera, this.city);
     this.input = new Input(this.renderer.domElement);
 

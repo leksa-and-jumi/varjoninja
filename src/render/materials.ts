@@ -103,7 +103,7 @@ vec3 facadeColor(float facade, float tint) {
   if (facade < 0.5) return mix(vec3(0.42, 0.55, 0.62), vec3(0.55, 0.62, 0.66), tint);          // glass frame
   if (facade < 1.5) return mix(vec3(0.62, 0.6, 0.56), vec3(0.78, 0.74, 0.66), tint);          // office stone
   if (facade < 2.5) return mix(vec3(0.52, 0.24, 0.18), vec3(0.7, 0.42, 0.3), tint);            // brick
-  if (facade < 3.5) return mix(vec3(0.86, 0.86, 0.84), vec3(0.62, 0.7, 0.76), tint);           // modern panels
+  if (facade < 3.5) return mix(vec3(0.74, 0.74, 0.72), vec3(0.55, 0.62, 0.68), tint);           // modern panels
   return mix(vec3(0.45, 0.47, 0.5), vec3(0.6, 0.55, 0.45), tint);                               // warehouse
 }
 vec3 glassColor(float facade, float tint) {
@@ -134,6 +134,15 @@ vec3 glassColor(float facade, float tint) {
     vec3 wall = base;
     // Subtle large-scale dirt / variation so walls are not flat.
     wall *= 0.9 + 0.12 * vnoise(vec2(u * 0.15, v * 0.08) + seed);
+    // Weathering: rain streaks running down, and grime near the street.
+    float streak = vnoise(vec2(u * 1.3 + seed, v * 0.04)) * vnoise(vec2(u * 0.35, v * 0.02 + seed));
+    wall *= 1.0 - 0.18 * streak;
+    wall *= mix(0.78, 1.0, smoothstep(0.0, 3.5, v));
+    // Modern panels: thin seams between the panels.
+    if (facade > 2.5 && facade < 3.5) {
+      vec2 pf = fract(vec2(u / 1.5, v / 1.2));
+      wall *= 1.0 - 0.18 * max(step(pf.x, 0.02), step(pf.y, 0.025));
+    }
     if (facade > 1.5 && facade < 2.5) {
       // Brick rows.
       float bv = fract(v / 0.32); float bu = fract(u / 0.7 + step(0.5, fract(v / 0.64)) * 0.5);
@@ -142,24 +151,48 @@ vec3 glassColor(float facade, float tint) {
     }
     float inWin = 0.0;
     float row = 0.0;
+    // Window rectangle inside its cell (u0, u1, v0, v1) and how deep its shadowed edge looks.
+    float recess = 1.0;
+    float curtain = 0.0;
     if (v < groundH && vSpan.x < 0.5) {
       // Street level: big shop windows with a dark frame.
       inWin = step(0.06, cu) * step(cu, 0.94) * step(0.5, v) * step(v, groundH - 1.1);
       row = -1.0;
       float band = step(groundH - 0.9, v) * step(v, groundH - 0.25);
       wall = mix(wall, wall * 0.55, band);
+      float frame = step(0.04, cu) * step(cu, 0.96) * step(0.4, v) * step(v, groundH - 1.0) * (1.0 - inWin);
+      wall = mix(wall, vec3(0.08, 0.08, 0.09), frame);
+      recess = 1.0 - 0.4 * (1.0 - smoothstep(0.0, 0.5, groundH - 1.1 - v));
     } else if (v < top - 1.2) {
       float fv = (v - groundH) / floorH;
       row = floor(fv);
       float cv = fract(fv);
-      if (facade < 0.5) inWin = step(0.04, cu) * step(cu, 0.96) * step(0.06, cv) * step(cv, 0.97);
-      else if (facade < 1.5) inWin = step(0.16, cu) * step(cu, 0.84) * step(0.25, cv) * step(cv, 0.82);
-      else if (facade < 2.5) {
-        inWin = step(0.26, cu) * step(cu, 0.74) * step(0.22, cv) * step(cv, 0.78);
-        float sill = step(0.24, cu) * step(cu, 0.76) * step(0.16, cv) * step(cv, 0.22);
-        wall = mix(wall, vec3(0.78, 0.74, 0.68), sill);
-      } else if (facade < 3.5) inWin = step(0.03, cu) * step(cu, 0.97) * step(0.3, cv) * step(cv, 0.85);
-      else inWin = step(0.3, cu) * step(cu, 0.7) * step(0.55, cv) * step(cv, 0.78) * step(0.5, h21(vec2(col, seed)));
+      vec4 r;
+      if (facade < 0.5) r = vec4(0.04, 0.96, 0.06, 0.97);
+      else if (facade < 1.5) r = vec4(0.16, 0.84, 0.25, 0.82);
+      else if (facade < 2.5) r = vec4(0.26, 0.74, 0.22, 0.78);
+      else if (facade < 3.5) r = vec4(0.03, 0.97, 0.3, 0.85);
+      else r = vec4(0.3, 0.7, 0.55, 0.78);
+      inWin = step(r.x, cu) * step(cu, r.y) * step(r.z, cv) * step(cv, r.w);
+      // Warehouses: only some window slots have a window.
+      float hasWin = facade > 3.5 ? step(0.5, h21(vec2(col, seed))) : 1.0;
+      inWin *= hasWin;
+      // A thin dark frame around each window, and a light stone sill under it.
+      float fu = 0.05 / cw;
+      float fvv = 0.05 / floorH;
+      float frame = step(r.x - fu, cu) * step(cu, r.y + fu) * step(r.z - fvv, cv) * step(cv, r.w + fvv) * (1.0 - inWin) * hasWin;
+      if (facade > 0.5) wall = mix(wall, wall * 0.45, frame);
+      if (facade > 0.5 && facade < 3.5 && hasWin > 0.5) {
+        float sill = step(r.x - 0.02, cu) * step(cu, r.y + 0.02) * step(r.z - 0.1 / floorH, cv) * step(cv, r.z - fvv);
+        wall = mix(wall, vec3(0.8, 0.77, 0.72), sill);
+      }
+      // Recessed glass: the top and one side are in shadow.
+      float dTop = (r.w - cv) * floorH;
+      float dSide = (cu - r.x) * cw;
+      recess = (1.0 - 0.5 * (1.0 - smoothstep(0.0, 0.4, dTop))) * (1.0 - 0.3 * (1.0 - smoothstep(0.0, 0.25, dSide)));
+      // Some rooms have curtains.
+      float cr = h21(vec2(col * 1.7 + seed, row * 2.3));
+      if (cr < 0.3) curtain = step(abs(cu - (r.x + r.y) * 0.5), (r.y - r.x) * (0.18 + cr)) < 0.5 ? 1.0 : 0.0;
       // Vertical stripes between window columns on stone offices.
       if (facade > 0.5 && facade < 1.5) wall *= 1.0 - 0.12 * step(abs(cu - 0.5), 0.36) * (1.0 - inWin);
     } else {
@@ -176,6 +209,9 @@ vec3 glassColor(float facade, float tint) {
     if (row < 0.0) bLitColor = vec3(1.0, 0.85, 0.6);
     // Inside a window: dark glass that reflects the sky; a little interior variation.
     vec3 glass = glassColor(facade, tint) * (0.75 + 0.5 * h21(vec2(col, row + seed)));
+    glass = mix(glass, vec3(0.55, 0.48, 0.38), curtain * 0.6 * step(0.5, facade));
+    glass *= recess;
+    bLitColor *= mix(1.0, 0.75, curtain);
     diffuseColor.rgb = mix(wall, glass, inWin);
     bRough = mix(facade > 2.5 && facade < 3.5 ? 0.55 : 0.88, 0.06, inWin);
     bMetal = mix(0.0, facade < 0.5 ? 0.85 : 0.6, inWin);

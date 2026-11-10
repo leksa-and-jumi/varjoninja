@@ -31,6 +31,8 @@ Tämä repo kuuluu Julius (7 v) ja Leo (10 v) -veljesten pelistudioon (GitHub-or
   - `worker/` – huonepalvelin. `blender/` – mallien teko.
 - **Kaupunki tulee siemenestä** (`CITY.seed`): kaikilla sama kaupunki ilman verkkoliikennettä. 10 × 10 korttelia, keskustassa pilvenpiirtäjät, laidoilla matalampaa, saari meren keskellä.
 - **Hahmot** (`public/models/character.glb`): yksi riggattu vartalo Blenderistä (skin modifier + subdivision, luut nimetty). Värit eivät ole mallissa: jokaisen verteksin UV.x on "alue" (iho, paita, housut, kengät, naamio…) ja shader värittää alueet hahmon paletista. Asusteet (hiukset, lippis, poliisin lakki, otsanauha, vyö, miekka) ovat luihin kiinnitettyjä mesheja, joita näytetään tai piilotetaan. GLTFLoader poistaa pisteet nimistä (`upperArm.L` → `upperArmL`).
+- **Kasvot ja vaatteet**: päässä on silmät (valkuainen + pupilli), kulmakarvat, nenä, korvat ja suu omina alueinaan (`REGION` 14–19). Vartalon vaatealueet (paita, hihat, housut, vyö, kengät) lasketaan shaderissa pikselikohtaisesti lepoasennon sijainnista (`bodyRegion`), joten helmat ovat suoria; Blender merkitsee vartalon alueeksi 30. Päivitä samalla molemmat, jos rajoja muutetaan.
+- **Mallien välimuisti**: kun `public/models/*.glb` muuttuu, nosta `MODEL_VERSION` (config.ts), muuten selaimet käyttävät vanhaa mallia.
 - **Animaatiot ovat koodia** (`animator.ts`): asento lasketaan joka ruudulla ja luita käännetään hahmon omissa akseleissa (x = eteen/taakse, z = sivulle). Ei animaatiotiedostoja.
 - **Autot** (`public/models/car_*.glb`): sedan, taksi, poliisi, pakettiauto, urheiluauto. Materiaalien nimet (`paint`, `headlight`, `siren_red`…) korvataan pelissä; renkaat ovat omia objektejaan.
 - Mallien muutos: muokkaa `blender/build_models.py` ja aja `npm run models` (Blender asennettu Homebrew'lla: `/Applications/Blender.app`). Commitoi syntyneet `.glb`-tiedostot.
@@ -40,6 +42,11 @@ Tämä repo kuuluu Julius (7 v) ja Leo (10 v) -veljesten pelistudioon (GitHub-or
 - **Kielet** (`src/i18n.ts`): suomi, englanti ja thai. Kaikki pelaajalle näkyvät tekstit haetaan `t('avain')`-funktiolla; uusi teksti lisätään kaikkiin kolmeen kieleen (testi tarkistaa). Kieli tallentuu asetuksiin. Thai-kirjaimet tulevat Noto Sans Thai -fontista. Mainostaulut kaupungissa ovat suomeksi (kaupungin omat mainokset).
 - **Autokamera** (`CameraRig.updateCar`, vakiot `CAR_CAMERA`): pysyy auton takana, katsoo nopeuden mukaan eteenpäin, palaa taakse kun hiirellä ei ole katsottu hetkeen. `C` vaihtaa lähi-/kaukokuvan.
 - **Päivä ja yö** tulevat kellosta (`timeOfDay`, vuorokausi 16 min), moninpelissä palvelimen kellosta.
+
+## Grafiikan laatu
+
+- `QUALITY` (game.ts): _Kevyt_ ilman varjoja, _Keski_ 2048-varjokartta, _Hieno_ 4096-varjokartta (140 m alue) + GTAO-kulmavarjostus puolella tarkkuudella. Varjokamera napsahtaa tekseleihin (ei välkettä).
+- Kaupungin realismi on shaderissa (`materials.ts`): ikkunakarmit, ikkunalaudat, syvennyksen varjo, verhot, sadevanat, katutason lika ja paneelisaumat. Katoilla on reunamuurit (`PARAPET`, myös törmäyksissä).
 
 ## Cloudflare-kiintiö (tärkeä)
 

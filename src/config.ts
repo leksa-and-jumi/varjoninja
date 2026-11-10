@@ -195,6 +195,9 @@ export const MISSIONS = {
   collectibles: 40,
 } as const;
 
+/** Bump when public/models/*.glb change, so browsers don't keep the old files. */
+export const MODEL_VERSION = 5;
+
 export const STORAGE = {
   profile: 'varjoninja.profile.v1',
   settings: 'varjoninja.settings.v1',

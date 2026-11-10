@@ -20,7 +20,10 @@ from mathutils import Vector
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'public', 'models')
 
 # Region numbers (must match REGION in src/render/characters.ts).
-SKIN, TOP, BOTTOM, SHOES, BELT, HEAD, EYES, HANDS, FOREARM, NECK, FACE, HAIR, HAT, ACCENT = range(14)
+(SKIN, TOP, BOTTOM, SHOES, BELT, HEAD, EYES, HANDS, FOREARM, NECK, FACE, HAIR, HAT, ACCENT,
+ EYEWHITE, NOSE, EARS, SOLE, BROWS, MOUTH) = range(20)
+# Body: the region comes from the rest position in the shader (see characters.ts).
+BODY_AUTO = 30
 
 
 def reset():
@@ -41,16 +44,17 @@ def material(name, color, metallic=0.0, roughness=0.6, emission=None):
 
 
 def set_region_uv(obj, region_of):
-    """Store region numbers in UV x (per face corner, from the vertex position)."""
+    """Store region numbers in UV x. One region per face (from the face centre), so the
+    edges between clothes follow the mesh instead of zig-zagging."""
     me = obj.data
     while me.uv_layers:
         me.uv_layers.remove(me.uv_layers[0])
     me.uv_layers.new(name='region')
     uv = me.uv_layers['region'].data
     for poly in me.polygons:
+        r = region_of(poly.center)
         for li in poly.loop_indices:
-            v = me.vertices[me.loops[li].vertex_index].co
-            uv[li].uv = (region_of(v) + 0.5, 0.5)
+            uv[li].uv = (r + 0.5, 0.5)
 
 
 def export(path, objects):
@@ -86,10 +90,13 @@ J = {
     'knee.L': (0.105, -0.015, 0.52),
     'ankle.L': (0.11, 0.02, 0.1),
     'toe.L': (0.11, -0.14, 0.035),
-    'shoulder.L': (0.2, 0.01, 1.43),
+    'collar.L': (0.11, 0.015, 1.465),
+    'shoulder.L': (0.205, 0.01, 1.43),
     'elbow.L': (0.37, 0.02, 1.2),
     'wrist.L': (0.52, 0.0, 1.0),
     'hand.L': (0.57, -0.01, 0.92),
+    'fingers.L': (0.605, -0.015, 0.865),
+    'thumb.L': (0.535, -0.05, 0.945),
 }
 for k in list(J):
     if k.endswith('.L'):
@@ -110,6 +117,9 @@ RADII = {
     'elbow': (0.052, 0.052),
     'wrist': (0.038, 0.034),
     'hand': (0.047, 0.026),
+    'collar': (0.075, 0.065),
+    'fingers': (0.04, 0.018),
+    'thumb': (0.017, 0.017),
 }
 
 EDGES = [
@@ -118,8 +128,10 @@ EDGES = [
     ('chest', 'neck'),
     ('pelvis', 'hip.L'), ('hip.L', 'knee.L'), ('knee.L', 'ankle.L'), ('ankle.L', 'toe.L'),
     ('pelvis', 'hip.R'), ('hip.R', 'knee.R'), ('knee.R', 'ankle.R'), ('ankle.R', 'toe.R'),
-    ('chest', 'shoulder.L'), ('shoulder.L', 'elbow.L'), ('elbow.L', 'wrist.L'), ('wrist.L', 'hand.L'),
-    ('chest', 'shoulder.R'), ('shoulder.R', 'elbow.R'), ('elbow.R', 'wrist.R'), ('wrist.R', 'hand.R'),
+    ('chest', 'collar.L'), ('collar.L', 'shoulder.L'), ('shoulder.L', 'elbow.L'), ('elbow.L', 'wrist.L'),
+    ('wrist.L', 'hand.L'), ('hand.L', 'fingers.L'), ('wrist.L', 'thumb.L'),
+    ('chest', 'collar.R'), ('collar.R', 'shoulder.R'), ('shoulder.R', 'elbow.R'), ('elbow.R', 'wrist.R'),
+    ('wrist.R', 'hand.R'), ('hand.R', 'fingers.R'), ('wrist.R', 'thumb.R'),
 ]
 
 # Bones: name, head joint, tail joint, parent.
@@ -146,6 +158,8 @@ def body_region(v):
     ax = abs(x)
     if z > 1.5 and ax < 0.09:
         return NECK
+    if z < 0.035:
+        return SOLE
     if z < 0.14:
         return SHOES
     if ax > 0.47:
@@ -173,8 +187,8 @@ def build_body():
         sv[i].radius = RADII[key]
         sv[i].use_root = n == 'pelvis'
     sub = obj.modifiers.new('sub', 'SUBSURF')
-    sub.levels = 1
-    sub.render_levels = 1
+    sub.levels = 2
+    sub.render_levels = 2
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
     bpy.ops.object.modifier_apply(modifier='skin')
@@ -198,17 +212,28 @@ def build_body():
 
     set_region_uv(head, head_region)
 
-    # Eyes: two small dark discs on the face.
+    # Face: eyes (white + pupil), brows, nose, ears and mouth.
+    def blob(loc, radius, scale, region, segments=14, rings=9):
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=rings, radius=radius, location=loc)
+        o = bpy.context.active_object
+        o.scale = scale
+        bpy.ops.object.transform_apply(scale=True)
+        bpy.ops.object.shade_smooth()
+        set_region_uv(o, lambda v: region)
+        return o
+
     eyes = []
     for sx in (-1, 1):
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=0.019, location=(sx * 0.04, -0.104, 1.705))
-        e = bpy.context.active_object
-        e.scale = (1, 0.5, 1.2)
-        bpy.ops.object.transform_apply(scale=True)
-        set_region_uv(e, lambda v: EYES)
-        eyes.append(e)
+        eyes.append(blob((sx * 0.042, -0.097, 1.706), 0.022, (1.0, 0.5, 0.78), EYEWHITE))
+        eyes.append(blob((sx * 0.042, -0.106, 1.705), 0.0115, (1.0, 0.5, 1.0), EYES, 10, 7))
+        eyes.append(blob((sx * 0.044, -0.104, 1.737), 0.022, (1.05, 0.28, 0.22), BROWS, 10, 6))
+        eyes.append(blob((sx * 0.112, 0.008, 1.69), 0.03, (0.35, 0.75, 1.15), EARS, 12, 8))
+    eyes.append(blob((0, -0.113, 1.674), 0.015, (0.8, 0.9, 1.3), NOSE, 12, 8))
+    eyes.append(blob((0, -0.101, 1.632), 0.018, (1.2, 0.25, 0.14), MOUTH, 10, 6))
 
-    set_region_uv(obj, body_region)
+    # The body's clothes are worked out per pixel in the game shader (crisp hems and sleeves),
+    # so the body mesh only says "body" here.
+    set_region_uv(obj, lambda v: BODY_AUTO)
 
     bpy.ops.object.select_all(action='DESELECT')
     for o in [obj, head, *eyes]:
@@ -294,7 +319,11 @@ def build_character():
         # Cut away the face side.
         bm = bmesh.new()
         bm.from_mesh(o.data)
-        bmesh.ops.delete(bm, geom=[v for v in bm.verts if (v.co.z < 0.0 and v.co.y < -0.02) or v.co.z < -0.045], context='VERTS')
+        # Keep the face free: cut away everything in front below the forehead.
+        # (Coordinates relative to the sphere centre, wherever Blender put the vertices.)
+        c = Vector((0, 0.012, 1.722)) - o.location
+        cut = [v for v in bm.verts if ((v.co.z - c.z) < 0.045 and (v.co.y - c.y) < -0.03) or ((v.co.z - c.z) < -0.01 and (v.co.y - c.y) < 0.03) or (v.co.z - c.z) < -0.045]
+        bmesh.ops.delete(bm, geom=cut, context='VERTS')
         bm.to_mesh(o.data)
         bm.free()
         bpy.ops.object.shade_smooth()
@@ -303,9 +332,10 @@ def build_character():
 
     def hair_long():
         base = hair_short()
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=0.1, location=(0, 0.07, 1.6))
+        # Hair falling down the back (narrow, so it doesn't show beside the chin).
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=0.1, location=(0, 0.1, 1.58))
         tail = bpy.context.active_object
-        tail.scale = (1.1, 0.6, 1.6)
+        tail.scale = (0.85, 0.55, 1.55)
         bpy.ops.object.transform_apply(scale=True)
         bpy.ops.object.shade_smooth()
         set_region_uv(tail, lambda v: HAIR)
@@ -316,7 +346,8 @@ def build_character():
         dome = bpy.context.active_object
         bm = bmesh.new()
         bm.from_mesh(dome.data)
-        bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z < -0.005], context='VERTS')
+        cz = 1.73 - dome.location.z
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z - cz < -0.005], context='VERTS')
         bm.to_mesh(dome.data)
         bm.free()
         bpy.ops.object.shade_smooth()

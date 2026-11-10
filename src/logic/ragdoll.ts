@@ -74,7 +74,41 @@ const MIN_STICKS: [Joint, Joint, number][] = [
   ['headTop', 'pelvis', 0.7],
 ];
 
+/** Heavier body, lighter hands and feet: the limbs flop around the torso. */
+const MASS: Record<Joint, number> = {
+  pelvis: 3,
+  chest: 3,
+  neck: 1.5,
+  headTop: 1.6,
+  shoulderL: 1.5,
+  shoulderR: 1.5,
+  elbowL: 0.8,
+  elbowR: 0.8,
+  wristL: 0.5,
+  wristR: 0.5,
+  handL: 0.4,
+  handR: 0.4,
+  hipL: 2,
+  hipR: 2,
+  kneeL: 1.2,
+  kneeR: 1.2,
+  ankleL: 0.7,
+  ankleR: 0.7,
+  toeL: 0.4,
+  toeR: 0.4,
+};
+
+/** Knees bend forward and elbows backward, never the other way. */
+const HINGES: { top: Joint; mid: Joint; end: Joint; dir: 1 | -1 }[] = [
+  { top: 'hipL', mid: 'kneeL', end: 'ankleL', dir: 1 },
+  { top: 'hipR', mid: 'kneeR', end: 'ankleR', dir: 1 },
+  { top: 'shoulderL', mid: 'elbowL', end: 'wristL', dir: -1 },
+  { top: 'shoulderR', mid: 'elbowR', end: 'wristR', dir: -1 },
+];
+
 const GRAVITY = 24;
+/** How much of the speed is kept when hitting the floor hard (a small bounce). */
+const BOUNCE = 0.25;
 const RADIUS = 0.08;
 const FRICTION = 0.75;
 
@@ -89,6 +123,7 @@ export class Ragdoll {
   readonly pos: Vec3[];
   private prev: Vec3[];
   private sticks: { a: number; b: number; len: number }[];
+  private inv = JOINTS.map((j) => 1 / MASS[j]);
   private mins: { a: number; b: number; len: number }[];
   /** Seconds of (almost) no movement. */
   private still = 0;
@@ -156,6 +191,7 @@ export class Ragdoll {
     for (let iter = 0; iter < 6; iter++) {
       for (const s of this.sticks) this.solve(s.a, s.b, s.len, false);
       for (const s of this.mins) this.solve(s.a, s.b, s.len, true);
+      this.hinges();
       for (let i = 0; i < this.pos.length; i++) this.collide(i, world);
     }
     // Friction on the ground: points touching the floor lose sideways speed.
@@ -180,13 +216,63 @@ export class Ragdoll {
     const dz = q.z - p.z;
     const d = Math.hypot(dx, dy, dz) || 1e-6;
     if (minOnly && d >= len) return;
-    const diff = ((d - len) / d) * 0.5;
-    p.x += dx * diff;
-    p.y += dy * diff;
-    p.z += dz * diff;
-    q.x -= dx * diff;
-    q.y -= dy * diff;
-    q.z -= dz * diff;
+    // The lighter point moves more.
+    const wa = this.inv[a]!;
+    const wb = this.inv[b]!;
+    const diff = (d - len) / d / (wa + wb);
+    p.x += dx * diff * wa;
+    p.y += dy * diff * wa;
+    p.z += dz * diff * wa;
+    q.x -= dx * diff * wb;
+    q.y -= dy * diff * wb;
+    q.z -= dz * diff * wb;
+  }
+
+  /** Keep knees and elbows bending the natural way. */
+  private hinges(): void {
+    const P = (j: Joint) => this.pos[JOINTS.indexOf(j)]!;
+    const hl = P('hipL');
+    const hr = P('hipR');
+    const pel = P('pelvis');
+    const ch = P('chest');
+    // Body forward = left × up.
+    const lx = hl.x - hr.x;
+    const ly = hl.y - hr.y;
+    const lz = hl.z - hr.z;
+    const ux = ch.x - pel.x;
+    const uy = ch.y - pel.y;
+    const uz = ch.z - pel.z;
+    let fx = ly * uz - lz * uy;
+    let fy = lz * ux - lx * uz;
+    let fz = lx * uy - ly * ux;
+    const fl = Math.hypot(fx, fy, fz) || 1;
+    fx /= fl;
+    fy /= fl;
+    fz /= fl;
+    for (const h of HINGES) {
+      const a = P(h.top);
+      const m = P(h.mid);
+      const b = P(h.end);
+      // Closest point to the joint on the line top→end.
+      const sx = b.x - a.x;
+      const sy = b.y - a.y;
+      const sz = b.z - a.z;
+      const sl = sx * sx + sy * sy + sz * sz || 1;
+      const t = Math.max(
+        0,
+        Math.min(1, ((m.x - a.x) * sx + (m.y - a.y) * sy + (m.z - a.z) * sz) / sl),
+      );
+      const ox = m.x - (a.x + sx * t);
+      const oy = m.y - (a.y + sy * t);
+      const oz = m.z - (a.z + sz * t);
+      const side = (ox * fx + oy * fy + oz * fz) * h.dir;
+      if (side < 0.01) {
+        const push = (0.01 - side) * h.dir;
+        m.x += fx * push;
+        m.y += fy * push;
+        m.z += fz * push;
+      }
+    }
   }
 
   private collide(i: number, world: RagdollWorld): void {
@@ -194,10 +280,11 @@ export class Ragdoll {
     world.pushOut(p);
     const floor = world.floor(p.x, p.y, p.z) + RADIUS;
     if (p.y < floor) {
-      p.y = floor;
-      // No bouncing: the fall stops at the floor.
+      // A hard landing bounces a little; a soft one just stops.
       const q = this.prev[i]!;
-      if (q.y < p.y) q.y = p.y;
+      const vy = p.y - q.y;
+      p.y = floor;
+      q.y = vy < -0.06 ? p.y + vy * BOUNCE : Math.max(q.y, p.y);
     }
   }
 

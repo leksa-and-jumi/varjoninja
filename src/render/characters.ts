@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { MODEL_VERSION } from '../config';
 import { damp, type Vec3 } from '../logic/geom';
 import { JOINTS, type Joint } from '../logic/ragdoll';
 import { Rng } from '../logic/rng';
@@ -25,8 +26,14 @@ export const REGION = {
   hair: 11,
   hat: 12,
   accent: 13,
+  eyeWhite: 14,
+  nose: 15,
+  ears: 16,
+  sole: 17,
+  brows: 18,
+  mouth: 19,
 } as const;
-const REGION_COUNT = 14;
+const REGION_COUNT = 20;
 
 export type Accessory =
   'hairShort' | 'hairLong' | 'cap' | 'policeHat' | 'headband' | 'belt' | 'sword';
@@ -71,6 +78,13 @@ export function ninjaLook(c: NinjaColors, skin = SKIN_TONES[1]!): Look {
   p[REGION.neck] = mask.clone();
   p[REGION.eyes] = new THREE.Color(0x101014);
   p[REGION.hands] = new THREE.Color(0x1d1e22);
+  // The mask covers nose, ears and mouth; only the eyes and brows show.
+  p[REGION.eyeWhite] = new THREE.Color(0xf1efe9);
+  p[REGION.nose] = mask.clone();
+  p[REGION.ears] = mask.clone();
+  p[REGION.mouth] = mask.clone();
+  p[REGION.brows] = new THREE.Color(0x1a1410);
+  p[REGION.sole] = new THREE.Color(0x0b0b0d);
   return { palette: p, accessories: ['headband', 'belt', 'sword'], scale: 1, width: 1 };
 }
 
@@ -100,8 +114,13 @@ export function civilianLook(seed: number): Look {
   p[REGION.bottom] = pants;
   p[REGION.belt] = pants.clone().multiplyScalar(0.7);
   p[REGION.shoes] = new THREE.Color(rng.pick(['#222222', '#f2f2f2', '#6b3f22', '#33415c']));
-  p[REGION.eyes] = new THREE.Color(0x15110f);
+  p[REGION.eyes] = new THREE.Color(rng.pick(['#3b2618', '#2f4f6f', '#3d5a35', '#1b1410']));
   p[REGION.hair] = new THREE.Color(rng.pick(HAIR));
+  p[REGION.eyeWhite] = new THREE.Color(0xf1efe9);
+  p[REGION.brows] = p[REGION.hair]!.clone().multiplyScalar(0.8);
+  p[REGION.mouth] = skin.clone().lerp(new THREE.Color(0x9c4a4a), 0.45);
+  p[REGION.nose] = skin.clone().multiplyScalar(0.97);
+  p[REGION.sole] = new THREE.Color(0x1a1a1a);
   p[REGION.hat] = new THREE.Color(rng.pick(SHIRTS));
   p[REGION.accent] = p[REGION.hat]!.clone().multiplyScalar(0.7);
   const acc: Accessory[] = [
@@ -143,22 +162,54 @@ export function thugLook(seed: number): Look {
   return look;
 }
 
+/**
+ * Clothes on the body, decided per pixel from the rest pose position (model space, metres:
+ * y up, x = character's left), so hems and sleeves are straight lines.
+ */
+const BODY_REGIONS = /* glsl */ `
+int bodyRegion(vec3 p) {
+  float ax = abs(p.x);
+  if (p.y > 1.5 && ax < 0.09) return ${REGION.neck};
+  if (p.y < 0.035) return ${REGION.sole};
+  if (p.y < 0.14) return ${REGION.shoes};
+  if (ax > 0.24 && p.y > 0.75) {
+    // Arm: how far from the shoulder (0) to the wrist (1).
+    vec2 sh = vec2(0.205, 1.43);
+    vec2 wr = vec2(0.52, 1.0);
+    vec2 d = wr - sh;
+    float t = dot(vec2(ax, p.y) - sh, d) / dot(d, d);
+    if (t > 1.0) return ${REGION.hands};
+    if (t > 0.48) return ${REGION.forearm};
+    return ${REGION.top};
+  }
+  if (p.y < 0.9) return ${REGION.bottom};
+  if (p.y < 0.985) return ${REGION.belt};
+  return ${REGION.top};
+}
+`;
+
 function paletteMaterial(look: Look): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0 });
   const uniforms = { uPalette: { value: look.palette.map((c) => c.clone()) } };
   m.onBeforeCompile = (shader) => {
     shader.uniforms['uPalette'] = uniforms.uPalette;
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying float vRegion;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRegion = uv.x;');
+      .replace(
+        '#include <common>',
+        '#include <common>\nflat varying float vRegion;\nvarying vec3 vRest;',
+      )
+      .replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\nvRegion = uv.x;\nvRest = position;',
+      );
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        `#include <common>\nvarying float vRegion;\nuniform vec3 uPalette[${REGION_COUNT}];`,
+        `#include <common>\nflat varying float vRegion;\nvarying vec3 vRest;\nuniform vec3 uPalette[${REGION_COUNT}];\n${BODY_REGIONS}`,
       )
       .replace(
         '#include <color_fragment>',
-        `#include <color_fragment>\n{ int r = int(clamp(floor(vRegion), 0.0, ${REGION_COUNT - 1}.0)); diffuseColor.rgb *= uPalette[r]; }`,
+        `#include <color_fragment>\n{ int r = vRegion > 29.5 ? bodyRegion(vRest) : int(clamp(floor(vRegion), 0.0, ${REGION_COUNT - 1}.0)); diffuseColor.rgb *= uPalette[r]; }`,
       );
   };
   m.customProgramCacheKey = () => 'palette-character';
@@ -171,7 +222,9 @@ function paletteMaterial(look: Look): THREE.MeshStandardMaterial {
 let template: THREE.Object3D | null = null;
 
 export async function loadCharacterModel(baseUrl: string): Promise<void> {
-  const gltf = await new GLTFLoader().loadAsync(`${baseUrl}models/character.glb`);
+  const gltf = await new GLTFLoader().loadAsync(
+    `${baseUrl}models/character.glb?v=${MODEL_VERSION}`,
+  );
   template = gltf.scene;
 }
 

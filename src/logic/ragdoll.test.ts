@@ -72,6 +72,32 @@ describe('ragdoll', () => {
     expect(Math.abs(a.point('headTop').z - b.point('headTop').z)).toBeGreaterThan(0.02);
   });
 
+  it('bends knees forward, not backward', () => {
+    const r = new Ragdoll(standing());
+    const rng = new Rng(9);
+    r.push({ x: 0, y: 6, z: -9 }, 5, () => rng.next());
+    for (let i = 0; i < 60 * 3; i++) {
+      r.step(1 / 60, flat);
+      // Forward of the body = left × up.
+      const l = r.point('hipL');
+      const rr = r.point('hipR');
+      const c = r.point('chest');
+      const pe = r.point('pelvis');
+      const left = [l.x - rr.x, l.y - rr.y, l.z - rr.z];
+      const up = [c.x - pe.x, c.y - pe.y, c.z - pe.z];
+      const f = [
+        left[1]! * up[2]! - left[2]! * up[1]!,
+        left[2]! * up[0]! - left[0]! * up[2]!,
+        left[0]! * up[1]! - left[1]! * up[0]!,
+      ];
+      const k = r.point('kneeL');
+      const a = r.point('ankleL');
+      const mid = [(l.x + a.x) / 2, (l.y + a.y) / 2, (l.z + a.z) / 2];
+      const dot = (k.x - mid[0]!) * f[0]! + (k.y - mid[1]!) * f[1]! + (k.z - mid[2]!) * f[2]!;
+      expect(dot).toBeGreaterThan(-0.05);
+    }
+  });
+
   it('goes to sleep when still', () => {
     const r = new Ragdoll(standing());
     r.push({ x: 2, y: 0, z: 0 }, 0, () => 0.5);
