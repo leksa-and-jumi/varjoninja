@@ -1,7 +1,9 @@
 // Everything alive in the city besides the ninja: people, cars, crimes, police and fights.
 
 import * as THREE from 'three';
-import { CITY, COMBAT, PEDS, PLAYER, POLICE, TRAFFIC } from '../config';
+import { AMBULANCE, CITY, COMBAT, PEDS, PLAYER, POLICE, TRAFFIC } from '../config';
+import { Ambulances } from './ambulances';
+import { Decals } from '../render/decals';
 import { groundHeight, isOnRoad, type City } from '../logic/city';
 import { activeCrimes, CRIME_INFO, type Crime, type CrimeKind } from '../logic/crimes';
 import { t, type TextKey } from '../i18n';
@@ -139,7 +141,7 @@ function crimeHint(kind: CrimeKind): string {
 }
 
 const LOOK_CACHE = new Map<string, Look>();
-function lookFor(kind: PersonKind, seed: number): Look {
+export function lookFor(kind: PersonKind, seed: number): Look {
   const key = `${kind}:${seed}`;
   let look = LOOK_CACHE.get(key);
   if (!look) {
@@ -158,6 +160,10 @@ export class World {
   /** Knocked-out people that fall like rag dolls (by person id). */
   private ragdolls = new Map<number, Ragdoll>();
   private ragdollWorld: RagdollWorld;
+  private ambulances: Ambulances;
+  private decals: Decals;
+  /** Knocked-out people who already left a stain. */
+  private bled = new Set<number>();
   cars: CarEntity[] = [];
   private carPool = new Map<CarModel, CarView[]>();
   parked: Parked[] = [];
@@ -188,6 +194,8 @@ export class World {
   wanted = 0;
   private wantedTimer = 0;
   heroPoints = 0;
+  /** All points ever earned (the rank does not drop when shopping). */
+  earned = 0;
   /** Seed shared by everyone in the room (crimes). */
   roomSeed = 1;
   private clockOffset = 0;
@@ -223,6 +231,28 @@ export class World {
     this.collectMesh.frustumCulled = false;
     scene.add(this.collectMesh);
 
+    this.decals = new Decals(scene);
+    this.ambulances = new Ambulances(scene, city, {
+      waitingPeople: () => this.people.filter((p) => p.hp <= 0 && !p.gone),
+      takePerson: (p) => {
+        p.gone = true;
+        p.quiet = true;
+      },
+      release: (patient, x, z) => {
+        // Back on their feet, walking off from the hospital doors.
+        const block = nearestBlock(this.city, x, z);
+        const b = this.city.blocks[block]!;
+        const p = this.addPerson(patient.kind, block, closestLoop(b, x, z), patient.seed);
+        p.x = x;
+        p.z = z;
+        p.y = CITY.sidewalkHeight;
+        p.hostile = false;
+        p.runner = false;
+        p.crime = -1;
+      },
+      lookOf: (kind, seed) => lookFor(kind, seed),
+      sparkle: (x, y, z) => this.fx.sparkle(x, y, z, new THREE.Color(0.5, 1, 0.6)),
+    });
     this.ragdollWorld = {
       floor: (x, y, z) => {
         let floor = groundHeight(x, z);
@@ -369,7 +399,7 @@ export class World {
   private carView(model: CarModel, color: string): CarView {
     const pool = this.carPool.get(model);
     const v = pool?.pop() ?? new CarView(model, color);
-    if (model !== 'taxi' && model !== 'police') v.paint.color.set(color);
+    if (model !== 'taxi' && model !== 'police' && model !== 'ambulance') v.paint.color.set(color);
     this.scene.add(v.root);
     return v;
   }
@@ -672,6 +702,10 @@ export class World {
     const innocent = p.kind === 'civ' || (p.kind === 'cop' && this.wanted === 0);
     const ko = hitPerson(p, dmg, dx, dz, force);
     if (ko) {
+      const dl = Math.hypot(dx, dz) || 1;
+      this.fx.blood(p.x, p.y + 1.1, p.z, dx / dl, dz / dl);
+      // An ambulance will come for them in a minute or two.
+      p.rescueAt = this.time + this.rng.range(AMBULANCE.minWait, AMBULANCE.maxWait);
       // Knocked out: fly like a rag doll, a little differently every time.
       const len = Math.hypot(dx, dz) || 1;
       // A real hit knocks you over rather than sending you flying (finishing moves still do).
@@ -1015,13 +1049,11 @@ export class World {
         sc.cat = null;
       }
       this.scene.remove(sc.beacon);
-      // Thugs that were knocked out vanish in a puff a bit later.
-      setTimeout(() => {
-        for (const pid of sc.people) {
-          const p = this.people.find((q) => q.id === pid);
-          if (p) p.gone = true;
-        }
-      }, 4000);
+      // Knocked-out thugs stay until the ambulance takes them; the rest walk off as usual.
+      for (const pid of sc.people) {
+        const p = this.people.find((q) => q.id === pid);
+        if (p && p.hp > 0) p.gone = true;
+      }
       this.scenes.delete(id);
     }
   }
@@ -1163,8 +1195,17 @@ export class World {
         p.z = c.z;
         p.y = this.ragdollWorld.floor(c.x, c.y, c.z);
         p.stateTime += dt;
-        if ((p.kind === 'civ' || p.kind === 'cop') && p.stateTime > PEDS.knockoutTime)
-          p.gone = true;
+        if (rag.asleep && !this.bled.has(p.id)) {
+          // A small stain where they lie.
+          this.bled.add(p.id);
+          const chest = rag.point('chest');
+          this.decals.add(
+            chest.x,
+            this.ragdollWorld.floor(chest.x, chest.y, chest.z),
+            chest.z,
+            this.rng.range(0.9, 1.4),
+          );
+        }
         if (p.crime < 0 && d > PEDS.despawnRadius) p.gone = true;
         continue;
       }
@@ -1180,11 +1221,7 @@ export class World {
       });
       if (ev.strike) this.hurtPlayer(p.kind === 'cop' ? 6 : 8, p.x, p.z, player);
       if (p.kind === 'cop' && p.state === 'chase' && Math.hypot(d, p.y - py) < 35) copsNear = true;
-      // Knocked out civilians vanish after a while; so do far away people.
-      if (p.hp <= 0 && p.state === 'down' && p.kind === 'civ' && p.stateTime > PEDS.knockoutTime)
-        p.gone = true;
-      if (p.hp <= 0 && p.state === 'down' && p.kind === 'cop' && p.stateTime > PEDS.knockoutTime)
-        p.gone = true;
+      // Knocked-out people wait for the ambulance; far away people are forgotten.
       if (p.crime < 0 && d > PEDS.despawnRadius) p.gone = true;
       if (p.kind === 'cop' && this.wanted === 0 && d > 70) p.gone = true;
       if (p.runner && p.hp > 0 && d > 140) {
@@ -1201,7 +1238,7 @@ export class World {
     }
     for (const p of this.people) {
       if (p.gone) {
-        if (this.views.has(p.id)) this.fx.puff(p.x, p.y + 0.5, p.z, 10);
+        if (this.views.has(p.id) && !p.quiet) this.fx.puff(p.x, p.y + 0.5, p.z, 10);
         this.releaseView(p.id);
       }
     }
@@ -1217,6 +1254,8 @@ export class World {
       }
     }
 
+    this.ambulances.update(dt, px, pz);
+    this.decals.update(dt);
     this.updateCars(dt, player, night);
     this.updateShurikens(dt);
     this.updateCollectibles(dt, px, py, pz);
@@ -1248,6 +1287,7 @@ export class World {
         };
         for (const o of this.cars) if (o !== c) look(o.traffic.x, o.traffic.z, 1.6);
         for (const p of this.parked) look(p.car.x, p.car.z, 1.8);
+        for (const a of this.ambulances.obstacles()) look(a.x, a.z, 2);
         if (this.driving) look(this.driving.car.x, this.driving.car.z, 1.8);
         if (onFoot && player.pos.y < 2) look(px, pz, 1.6);
         for (const p of this.people) if (isOnRoad(p.x, p.z)) look(p.x, p.z, 1.4);
@@ -1324,7 +1364,7 @@ export class World {
   }
 
   get sirenOn(): boolean {
-    return this.cars.some((c) => c.siren);
+    return this.cars.some((c) => c.siren) || this.ambulances.active;
   }
 
   private updateShurikens(dt: number): void {

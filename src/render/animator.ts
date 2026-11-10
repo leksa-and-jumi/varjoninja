@@ -15,6 +15,8 @@ export type AnimMode =
   | 'wall'
   | 'swim'
   | 'sit'
+  | 'carry'
+  | 'kneel'
   | 'down'
   | 'panic'
   | 'cower';
@@ -247,6 +249,29 @@ export function poseFor(a: AnimInput): PoseResult {
       sharpness = 10;
       break;
     }
+    case 'carry': {
+      // Walking with both hands holding a stretcher in front.
+      hips = gait(pose, a.phase, 0.4, 0.7, 0, 0);
+      pose['upperArm.L'] = aimArm('L', v(0.15, -0.6, 0.7));
+      pose['upperArm.R'] = aimArm('R', v(-0.15, -0.6, 0.7));
+      pose['forearm.L'] = rot(-0.5);
+      pose['forearm.R'] = rot(-0.5);
+      pose.spine = rot(0.08);
+      sharpness = 10;
+      break;
+    }
+    case 'kneel':
+      // Kneeling down to help someone.
+      pose['thigh.L'] = rot(-1.5, 0, 0.1);
+      pose['shin.L'] = rot(1.6);
+      pose['thigh.R'] = rot(-0.2, 0, -0.1);
+      pose['shin.R'] = rot(2.2);
+      pose.spine = rot(0.5);
+      pose['upperArm.L'] = aimArm('L', v(0.1, -0.8, 0.6));
+      pose['upperArm.R'] = aimArm('R', v(-0.1, -0.8, 0.6));
+      hips = -0.55;
+      sharpness = 7;
+      break;
     case 'sit':
       pose['thigh.L'] = rot(-1.45, 0, 0.08);
       pose['thigh.R'] = rot(-1.45, 0, -0.08);

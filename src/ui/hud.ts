@@ -9,6 +9,8 @@ import { t, type TextKey } from '../i18n';
 export interface HudState {
   hp: number;
   heroPoints: number;
+  /** Points ever earned: the rank. */
+  earned: number;
   wanted: number;
   tod: number;
   x: number;
@@ -207,9 +209,9 @@ export class Hud {
   update(s: HudState): void {
     this.hpFill.style.width = `${(s.hp / PLAYER.maxHealth) * 100}%`;
     this.hpFill.classList.toggle('low', s.hp < 30);
-    if (s.heroPoints !== this.lastPoints) {
-      this.lastPoints = s.heroPoints;
-      const r = heroRank(s.heroPoints);
+    if (s.heroPoints + s.earned * 1e6 !== this.lastPoints) {
+      this.lastPoints = s.heroPoints + s.earned * 1e6;
+      const r = heroRank(s.earned);
       this.points.innerHTML = `⭐ <b>${s.heroPoints}</b> <small>${t('heroPoints')}</small>`;
       const title = t(`rank${r.rank}` as TextKey);
       this.rank.textContent = r.next ? `${title} · ${t('nextRank', { n: r.next })}` : title;

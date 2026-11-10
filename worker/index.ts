@@ -53,6 +53,9 @@ interface Attachment {
   /** Token bucket for the rate limit. */
   tokens: number;
   last: number;
+  /** Separate, slower bucket for chat messages. */
+  chatTokens?: number;
+  chatLast?: number;
 }
 
 export class Room extends DurableObject<Env> {
@@ -142,6 +145,22 @@ export class Room extends DurableObject<Env> {
       case 'smoke':
         this.broadcast({ t: 'smoke', id: att.id, x: m.x, y: m.y, z: m.z }, ws);
         break;
+      case 'chat': {
+        // Chat is only passed on to the others in this room, never stored. Max ~1 per 2 s.
+        const since = (now - (att.chatLast ?? 0)) / 1000;
+        const tokens = Math.min(
+          LIMITS.chatBurst,
+          (att.chatTokens ?? LIMITS.chatBurst) + since * LIMITS.chatRate,
+        );
+        att.chatLast = now;
+        if (tokens >= 1 && att.colors) {
+          att.chatTokens = tokens - 1;
+          this.broadcast({ t: 'chat', id: att.id, text: m.text }, ws);
+        } else {
+          att.chatTokens = tokens;
+        }
+        break;
+      }
     }
     ws.serializeAttachment(att);
   }

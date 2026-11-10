@@ -3,7 +3,20 @@
 import * as THREE from 'three';
 import type { Mode } from '../logic/player';
 import { poseFor, type AnimInput, type AnimMode } from './animator';
-import { CharacterView, ninjaLook, type NinjaColors } from './characters';
+import { outfitById, type Outfit } from '../logic/outfits';
+import { CharacterView, ninjaLook, type Look, type NinjaColors } from './characters';
+
+/** The ninja's look: own colours, or a bought outfit (which brings its own colours). */
+export function ninjaLookFor(colors: NinjaColors, outfitId: string | null): Look {
+  const o = outfitById(outfitId);
+  if (!o) return ninjaLook(colors);
+  return ninjaLook({ suit: o.suit, accent: o.accent, mask: o.mask }, undefined, {
+    pattern: o.pattern,
+    patternColor: new THREE.Color(o.patternColor),
+    glow: o.glow,
+    metal: o.metal,
+  });
+}
 
 export interface NinjaState {
   pos: THREE.Vector3;
@@ -85,11 +98,15 @@ export class NinjaView {
   private time = 0;
   private bodyUp = new THREE.Vector3(0, 1, 0);
 
+  /** The outfit being worn (null = own colours). */
+  outfit: Outfit | null = null;
+
   constructor(
     private readonly scene: THREE.Scene,
     colors: NinjaColors,
+    outfitId: string | null = null,
   ) {
-    this.character = new CharacterView(ninjaLook(colors));
+    this.character = new CharacterView(ninjaLookFor(colors, outfitId));
     scene.add(this.character.root);
 
     const ropeGeo = new THREE.CylinderGeometry(0.025, 0.025, 1, 6, 1, true);
@@ -124,11 +141,17 @@ export class NinjaView {
     this.tailMesh.frustumCulled = false;
     this.tailMesh.castShadow = true;
     scene.add(this.tailMesh);
+    this.setColors(colors, outfitId);
   }
 
-  setColors(colors: NinjaColors): void {
-    this.character.setLook(ninjaLook(colors));
-    this.tailMat.color.set(colors.accent);
+  setColors(colors: NinjaColors, outfitId: string | null = null): void {
+    this.outfit = outfitById(outfitId);
+    this.character.setLook(ninjaLookFor(colors, outfitId));
+    const o = this.outfit;
+    this.tailMat.color.set(o ? o.accent : colors.accent);
+    // Glowing outfits have glowing headband tails too.
+    this.tailMat.emissive.set(o && o.glow > 0 ? o.patternColor : '#000000');
+    this.tailMat.emissiveIntensity = o ? o.glow * 1.5 : 0;
   }
 
   setVisible(v: boolean): void {

@@ -542,6 +542,85 @@ function roofPropMeshes(props: RoofProp[], view: CityView): THREE.Object3D[] {
   return out;
 }
 
+/** Red crosses on the walls, a sign and a canopy over the doors. */
+function hospitalDecor(city: City, view: CityView): THREE.Group {
+  const g = new THREE.Group();
+  const crossTex = canvasTexture(256, 256, (c) => {
+    c.fillStyle = '#ffffff';
+    c.beginPath();
+    c.arc(128, 128, 124, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = '#d62828';
+    c.fillRect(98, 36, 60, 184);
+    c.fillRect(36, 98, 184, 60);
+  });
+  const signTex = canvasTexture(1024, 256, (c) => {
+    c.fillStyle = '#d62828';
+    c.fillRect(0, 0, 1024, 256);
+    c.fillStyle = '#ffffff';
+    c.fillRect(40, 78, 100, 100);
+    c.fillStyle = '#d62828';
+    c.fillRect(75, 88, 30, 80);
+    c.fillRect(50, 113, 80, 30);
+    c.fillStyle = '#ffffff';
+    c.font = '900 130px system-ui, sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText('SAIRAALA', 580, 135);
+  });
+  const crossMat = new THREE.MeshStandardMaterial({
+    map: crossTex,
+    emissiveMap: crossTex,
+    emissive: 0xffffff,
+    emissiveIntensity: 0,
+    transparent: true,
+  });
+  const signMat = new THREE.MeshStandardMaterial({
+    map: signTex,
+    emissiveMap: signTex,
+    emissive: 0xffffff,
+    emissiveIntensity: 0,
+  });
+  view.nightMaterials.push(
+    { material: crossMat, strength: 1.2 },
+    { material: signMat, strength: 1.2 },
+  );
+  const canopyMat = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.5 });
+  for (const h of city.hospitals) {
+    const b = city.buildings[h.building]!.boxes[0]!;
+    const top = b.maxY - 3.5;
+    const cx = (b.minX + b.maxX) / 2;
+    const cz = (b.minZ + b.maxZ) / 2;
+    // A cross on each wall, near the top.
+    for (const [x, z, rot] of [
+      [cx, b.minZ - 0.06, Math.PI],
+      [cx, b.maxZ + 0.06, 0],
+      [b.minX - 0.06, cz, -Math.PI / 2],
+      [b.maxX + 0.06, cz, Math.PI / 2],
+    ] as const) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), crossMat);
+      m.position.set(x, top, z);
+      m.rotation.y = rot;
+      g.add(m);
+    }
+    // Sign and canopy over the entrance (on the -Z side, facing the street).
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(12, 3), signMat);
+    sign.position.set(cx, 6.2, b.minZ - 0.08);
+    sign.rotation.y = Math.PI;
+    const canopy = new THREE.Mesh(new THREE.BoxGeometry(9, 0.35, 3.2), canopyMat);
+    canopy.position.set(cx, 4.4, b.minZ - 1.6);
+    canopy.castShadow = true;
+    const doors = new THREE.Mesh(
+      new THREE.PlaneGeometry(4.5, 3.4),
+      new THREE.MeshStandardMaterial({ color: 0x9fd3e8, roughness: 0.1, metalness: 0.5 }),
+    );
+    doors.position.set(cx, 1.9, b.minZ - 0.05);
+    doors.rotation.y = Math.PI;
+    g.add(sign, canopy, doors);
+  }
+  return g;
+}
+
 function fountain(block: CityBlock): THREE.Group {
   const g = new THREE.Group();
   const stone = new THREE.MeshStandardMaterial({ color: 0xc9c2b4, roughness: 0.8 });
@@ -715,6 +794,7 @@ export function buildCityView(city: City): CityView {
   );
 
   for (const block of city.blocks) if (block.kind === 'plaza') root.add(fountain(block));
+  root.add(hospitalDecor(city, view));
 
   const furniture = streetFurniture(city);
   const hydrants = instanced(

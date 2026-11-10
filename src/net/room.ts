@@ -98,6 +98,10 @@ export class RoomClient {
     this.send({ t: 'solved', crime });
   }
 
+  chat(text: string): void {
+    if (this.others > 0) this.send({ t: 'chat', text });
+  }
+
   smoke(x: number, y: number, z: number): void {
     if (this.others > 0) this.send({ t: 'smoke', x, y, z });
   }

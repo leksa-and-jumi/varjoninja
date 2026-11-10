@@ -151,6 +151,35 @@ export const PEDS = {
   knockoutTime: 6,
 } as const;
 
+/** Ambulances and hospitals. Times in seconds. */
+export const AMBULANCE = {
+  /** A knocked-out person waits this long (random between) before help comes. */
+  minWait: 60,
+  maxWait: 120,
+  /** At most this many ambulances at once. */
+  max: 2,
+  /** Only people this close to the ninja get an ambulance (others are out of sight). */
+  serviceRadius: 220,
+  /** The ambulance appears this far away and drives over. */
+  spawnDistance: 130,
+  speed: 17,
+  medicSpeed: 2.6,
+  kneelTime: 2,
+  /** Time in hospital before walking out healthy. */
+  hospitalTime: 50,
+  /** Healed people only walk out if the ninja is this close to the hospital. */
+  releaseRadius: 260,
+} as const;
+
+/** A little blood (parent allowed it on 2026-11-10). Times in seconds. */
+export const BLOOD = {
+  /** Stains disappear after this long… */
+  lifetime: 180,
+  /** …fading out during the last part. */
+  fade: 40,
+  maxStains: 40,
+} as const;
+
 export const POLICE = {
   /** Stars added for hurting someone who did nothing wrong. */
   starPerInnocentHit: 1,
@@ -196,7 +225,7 @@ export const MISSIONS = {
 } as const;
 
 /** Bump when public/models/*.glb change, so browsers don't keep the old files. */
-export const MODEL_VERSION = 5;
+export const MODEL_VERSION = 6;
 
 export const STORAGE = {
   profile: 'varjoninja.profile.v1',

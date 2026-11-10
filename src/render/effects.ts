@@ -141,6 +141,38 @@ export class Effects {
     }
   }
 
+  /** One floating glowing speck (the golden outfit's aura). */
+  mote(x: number, y: number, z: number, color: THREE.Color): void {
+    this.spawn(x, y, z, color, {
+      life: 0.6 + Math.random() * 0.6,
+      vx: (Math.random() - 0.5) * 0.6,
+      vy: 0.6 + Math.random() * 0.8,
+      vz: (Math.random() - 0.5) * 0.6,
+      size: 0.05 + Math.random() * 0.06,
+      grow: -0.04,
+      gravity: 0,
+      drag: 0.5,
+    });
+  }
+
+  /** A few red drops when someone is knocked out. */
+  blood(x: number, y: number, z: number, dirX: number, dirZ: number): void {
+    const c = new THREE.Color(0.45, 0.02, 0.02);
+    for (let i = 0; i < 10; i++) {
+      const s = 1.5 + Math.random() * 2.5;
+      this.spawn(x, y, z, c, {
+        life: 0.5 + Math.random() * 0.3,
+        vx: dirX * s + (Math.random() - 0.5) * 1.5,
+        vy: 1 + Math.random() * 2.5,
+        vz: dirZ * s + (Math.random() - 0.5) * 1.5,
+        size: 0.06 + Math.random() * 0.05,
+        grow: 0,
+        gravity: 14,
+        drag: 1,
+      });
+    }
+  }
+
   /** Big comic-book burst for finishing moves. */
   impact(x: number, y: number, z: number): void {
     const colors = [
