@@ -5,7 +5,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { damp } from '../logic/geom';
+import { damp, type Vec3 } from '../logic/geom';
+import { JOINTS, type Joint } from '../logic/ragdoll';
 import { Rng } from '../logic/rng';
 
 /** Region numbers stored in the model's UV x (see blender/build_models.py). */
@@ -246,6 +247,8 @@ export class CharacterView {
   private material: THREE.MeshStandardMaterial;
   private accessories = new Map<Accessory, THREE.Object3D>();
   private hipsRestY = 0;
+  private hipsRest = new THREE.Vector3();
+  private ragdoll: RagdollBone[] | null = null;
   hipsOffset = 0;
   private hipsCurrent = 0;
   private meshes: THREE.Mesh[] = [];
@@ -290,6 +293,117 @@ export class CharacterView {
       });
     }
     this.hipsRestY = this.rig.get('hips')?.bone.position.y ?? 0;
+    this.hipsRest.copy(this.rig.get('hips')?.bone.position ?? new THREE.Vector3());
+  }
+
+  get isRagdoll(): boolean {
+    return this.ragdoll !== null;
+  }
+
+  /** Where the ragdoll joints are right now (JOINTS order), taken from the current pose. */
+  jointPositions(): Vec3[] {
+    const at = (b: BoneName) => this.bonePosition(b, new THREE.Vector3());
+    const pelvis = at('hips');
+    const chest = at('chest');
+    const neck = at('neck');
+    const up = neck.clone().sub(chest).normalize();
+    const headTop = neck.clone().addScaledVector(up, 0.3 * this.root.scale.y * this.scale);
+    const foot = new THREE.Vector3(0, -0.06, 0.15)
+      .multiplyScalar(this.scale)
+      .applyQuaternion(this.bodyWorldQuat());
+    const side = (s: 'L' | 'R') => {
+      const shoulder = at(`upperArm.${s}`);
+      const elbow = at(`forearm.${s}`);
+      const wrist = at(`hand.${s}`);
+      const hand = wrist.clone().add(
+        wrist
+          .clone()
+          .sub(elbow)
+          .normalize()
+          .multiplyScalar(0.1 * this.scale),
+      );
+      const hip = at(`thigh.${s}`);
+      const knee = at(`shin.${s}`);
+      const ankle = at(`foot.${s}`);
+      return { shoulder, elbow, wrist, hand, hip, knee, ankle, toe: ankle.clone().add(foot) };
+    };
+    const l = side('L');
+    const r = side('R');
+    const list: Record<Joint, THREE.Vector3> = {
+      pelvis,
+      chest,
+      neck,
+      headTop,
+      shoulderL: l.shoulder,
+      elbowL: l.elbow,
+      wristL: l.wrist,
+      handL: l.hand,
+      shoulderR: r.shoulder,
+      elbowR: r.elbow,
+      wristR: r.wrist,
+      handR: r.hand,
+      hipL: l.hip,
+      kneeL: l.knee,
+      ankleL: l.ankle,
+      toeL: l.toe,
+      hipR: r.hip,
+      kneeR: r.knee,
+      ankleR: r.ankle,
+      toeR: r.toe,
+    };
+    return JOINTS.map((j) => ({ x: list[j].x, y: list[j].y, z: list[j].z }));
+  }
+
+  private bodyWorldQuat(): THREE.Quaternion {
+    return this.body.getWorldQuaternion(new THREE.Quaternion());
+  }
+
+  private get scale(): number {
+    return this.body.children[0]?.scale.y ?? 1;
+  }
+
+  /** Switch to ragdoll mode: remember how each bone sits relative to the joint points now. */
+  startRagdoll(points: Vec3[]): void {
+    this.root.updateMatrixWorld(true);
+    this.ragdoll = RAGDOLL_BONES.flatMap((def): RagdollBone[] => {
+      const r = this.rig.get(def.bone);
+      if (!r) return [];
+      const world = r.bone.getWorldQuaternion(new THREE.Quaternion());
+      if (def.sideA) {
+        const frame = frameOf(points, def);
+        return [{ def, rig: r, offset: frame.invert().multiply(world), dir0: null }];
+      }
+      return [{ def, rig: r, offset: world, dir0: dirOf(points, def).clone() }];
+    });
+  }
+
+  /** Move the bones to follow the ragdoll points. */
+  applyRagdoll(points: Vec3[]): void {
+    if (!this.ragdoll) return;
+    const hips = this.rig.get('hips');
+    if (hips?.bone.parent) {
+      const p = points[JOINTS.indexOf('pelvis')]!;
+      hips.bone.position.copy(hips.bone.parent.worldToLocal(new THREE.Vector3(p.x, p.y, p.z)));
+    }
+    const parentWorld = new THREE.Quaternion();
+    for (const rb of this.ragdoll) {
+      // Torso: full frame. Limbs: the smallest turn from where the bone pointed at the start.
+      const want = rb.dir0
+        ? new THREE.Quaternion()
+            .setFromUnitVectors(rb.dir0, dirOf(points, rb.def))
+            .multiply(rb.offset)
+        : frameOf(points, rb.def).multiply(rb.offset);
+      rb.rig.bone.parent!.getWorldQuaternion(parentWorld);
+      rb.rig.bone.quaternion.copy(parentWorld.invert().multiply(want));
+      rb.rig.bone.updateMatrixWorld(true);
+    }
+  }
+
+  /** Back to normal animation (e.g. when the view is reused for someone else). */
+  endRagdoll(): void {
+    this.ragdoll = null;
+    const hips = this.rig.get('hips');
+    if (hips) hips.bone.position.copy(this.hipsRest);
   }
 
   setShadow(on: boolean): void {
@@ -305,6 +419,7 @@ export class CharacterView {
     const u = this.material.userData['palette'] as { value: THREE.Color[] };
     look.palette.forEach((c, i) => u.value[i]!.copy(c));
     for (const [name, obj] of this.accessories) obj.visible = look.accessories.includes(name);
+    this.endRagdoll();
   }
 
   /** World position of a bone (for the rope hand, hits, the headband tails). */
@@ -330,7 +445,10 @@ export class CharacterView {
     }
     this.hipsCurrent = damp(this.hipsCurrent, this.hipsOffset, sharpness, dt);
     const hips = this.rig.get('hips');
-    if (hips) hips.bone.position.y = this.hipsRestY + this.hipsCurrent;
+    if (hips) {
+      hips.bone.position.copy(this.hipsRest);
+      hips.bone.position.y = this.hipsRestY + this.hipsCurrent;
+    }
   }
 
   dispose(): void {
@@ -340,3 +458,72 @@ export class CharacterView {
 }
 
 const IDENTITY = new THREE.Quaternion();
+
+// --- Ragdoll bones --------------------------------------------------------------------------
+
+interface RagdollBoneDef {
+  bone: BoneName;
+  /** The bone points from joint `from` toward joint `to`… */
+  from: Joint;
+  to: Joint;
+  /** …and (torso bones) its sideways direction follows these two joints, so it can't twist. */
+  sideA?: Joint;
+  sideB?: Joint;
+}
+
+interface RagdollBone {
+  def: RagdollBoneDef;
+  rig: BoneRig;
+  /** Torso: bone rotation relative to its joint frame. Limbs: the bone's world rotation at the start. */
+  offset: THREE.Quaternion;
+  /** Limbs: the bone direction at the start. */
+  dir0: THREE.Vector3 | null;
+}
+
+/** Parents first, so every bone sees its parent's new rotation. */
+const RAGDOLL_BONES: RagdollBoneDef[] = [
+  { bone: 'hips', from: 'pelvis', to: 'chest', sideA: 'hipL', sideB: 'hipR' },
+  { bone: 'spine', from: 'pelvis', to: 'chest', sideA: 'shoulderL', sideB: 'shoulderR' },
+  { bone: 'chest', from: 'chest', to: 'neck', sideA: 'shoulderL', sideB: 'shoulderR' },
+  { bone: 'neck', from: 'neck', to: 'headTop', sideA: 'shoulderL', sideB: 'shoulderR' },
+  { bone: 'head', from: 'neck', to: 'headTop', sideA: 'shoulderL', sideB: 'shoulderR' },
+  { bone: 'upperArm.L', from: 'shoulderL', to: 'elbowL' },
+  { bone: 'forearm.L', from: 'elbowL', to: 'wristL' },
+  { bone: 'hand.L', from: 'wristL', to: 'handL' },
+  { bone: 'upperArm.R', from: 'shoulderR', to: 'elbowR' },
+  { bone: 'forearm.R', from: 'elbowR', to: 'wristR' },
+  { bone: 'hand.R', from: 'wristR', to: 'handR' },
+  { bone: 'thigh.L', from: 'hipL', to: 'kneeL' },
+  { bone: 'shin.L', from: 'kneeL', to: 'ankleL' },
+  { bone: 'foot.L', from: 'ankleL', to: 'toeL' },
+  { bone: 'thigh.R', from: 'hipR', to: 'kneeR' },
+  { bone: 'shin.R', from: 'kneeR', to: 'ankleR' },
+  { bone: 'foot.R', from: 'ankleR', to: 'toeR' },
+];
+
+const fx = new THREE.Vector3();
+const fy = new THREE.Vector3();
+const fz = new THREE.Vector3();
+const fm = new THREE.Matrix4();
+
+const dirTmp = new THREE.Vector3();
+
+/** Unit direction of a bone from its joint points. */
+function dirOf(points: Vec3[], d: RagdollBoneDef): THREE.Vector3 {
+  const a = points[JOINTS.indexOf(d.from)]!;
+  const b = points[JOINTS.indexOf(d.to)]!;
+  return dirTmp.set(b.x - a.x, b.y - a.y, b.z - a.z).normalize();
+}
+
+/** A rotation frame from joint points: y along the bone, x toward the side joints. */
+function frameOf(points: Vec3[], d: RagdollBoneDef): THREE.Quaternion {
+  const p = (j: Joint) => points[JOINTS.indexOf(j)]!;
+  fy.copy(dirOf(points, d));
+  const s = p(d.sideA!);
+  const t = p(d.sideB!);
+  fx.set(s.x - t.x, s.y - t.y, s.z - t.z);
+  fx.addScaledVector(fy, -fx.dot(fy)).normalize();
+  fz.crossVectors(fx, fy);
+  fm.makeBasis(fx, fy, fz);
+  return new THREE.Quaternion().setFromRotationMatrix(fm);
+}

@@ -244,6 +244,15 @@ export class Sounds {
         this.tone(700, 1100, 0.15, 'triangle', 0.15);
         setTimeout(() => this.tone(1100, 600, 0.35, 'triangle', 0.15), 150);
         break;
+      case 'finisher':
+        // Rising swoosh, then a deep boom.
+        this.burst(300, 1.2, 0.5, 0.45, 'bandpass', 3500);
+        this.tone(220, 880, 0.35, 'sawtooth', 0.06);
+        setTimeout(() => {
+          this.tone(110, 35, 0.6, 'sine', 0.8);
+          this.burst(180, 0.6, 0.5, 0.6, 'lowpass', 60);
+        }, 380);
+        break;
       case 'carDoor':
         this.burst(200, 1, 0.12, 0.4 * v, 'lowpass');
         break;

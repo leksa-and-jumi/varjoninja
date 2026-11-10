@@ -190,6 +190,15 @@ export class Hud {
     setTimeout(() => p.remove(), 2600);
   }
 
+  /** Finishing move name, comic style, with a white flash. */
+  finisher(text: string): void {
+    const m = el('div', 'finisher-text', this.root, text);
+    setTimeout(() => m.remove(), 1500);
+    this.flash.classList.remove('white');
+    void this.flash.offsetWidth;
+    this.flash.classList.add('white');
+  }
+
   bigMessage(text: string, sub = ''): void {
     const m = el('div', 'big-message', this.root, `<b>${text}</b><span>${sub}</span>`);
     setTimeout(() => m.remove(), 2600);

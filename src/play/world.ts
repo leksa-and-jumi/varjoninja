@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { CITY, COMBAT, PEDS, PLAYER, POLICE, TRAFFIC } from '../config';
-import { isOnRoad, type City } from '../logic/city';
+import { groundHeight, isOnRoad, type City } from '../logic/city';
 import { activeCrimes, CRIME_INFO, type Crime, type CrimeKind } from '../logic/crimes';
 import { t, type TextKey } from '../i18n';
 import { angleDiff, type Vec3 } from '../logic/geom';
@@ -19,6 +19,7 @@ import {
 } from '../logic/people';
 import type { PlayerBody } from '../logic/player';
 import { hash, Rng } from '../logic/rng';
+import { Ragdoll, type RagdollWorld } from '../logic/ragdoll';
 import { spawnCar, stepCar, type TrafficCar } from '../logic/traffic';
 import { DrivenCar, type DriveInput } from '../logic/vehicle';
 import { poseFor, type AnimInput, type AnimMode } from '../render/animator';
@@ -41,7 +42,8 @@ export type SoundName =
   | 'carHit'
   | 'horn'
   | 'meow'
-  | 'carDoor';
+  | 'carDoor'
+  | 'finisher';
 
 export interface WorldCallbacks {
   notify(title: string, text: string, icon: string): void;
@@ -50,6 +52,26 @@ export interface WorldCallbacks {
   crimeSolved(id: number): void;
   shake(amount: number): void;
   playerKnockedOut(): void;
+  /** A finishing move started: show its name. */
+  finisher(kind: FinisherKind): void;
+}
+
+export type FinisherKind = 'tornado' | 'dash' | 'uppercut';
+
+/** Length of each finishing move (seconds of game time) and when it lands. */
+const FINISHERS: Record<FinisherKind, { duration: number; hitAt: number }> = {
+  tornado: { duration: 0.95, hitAt: 0.42 },
+  dash: { duration: 0.75, hitAt: 0.24 },
+  uppercut: { duration: 0.95, hitAt: 0.22 },
+};
+
+interface Finisher {
+  kind: FinisherKind;
+  t: number;
+  target: Person;
+  hit: boolean;
+  dirX: number;
+  dirZ: number;
 }
 
 type AttackMove = NonNullable<AnimInput['attack']>['move'];
@@ -133,6 +155,9 @@ export class World {
   private views = new Map<number, CharacterView>();
   private viewPool: CharacterView[] = [];
   private phases = new Map<number, number>();
+  /** Knocked-out people that fall like rag dolls (by person id). */
+  private ragdolls = new Map<number, Ragdoll>();
+  private ragdollWorld: RagdollWorld;
   cars: CarEntity[] = [];
   private carPool = new Map<CarModel, CarView[]>();
   parked: Parked[] = [];
@@ -151,6 +176,10 @@ export class World {
   private sinceHurt = 99;
   hurtFlash = 0;
   attack: Attack | null = null;
+  finisher: Finisher | null = null;
+  /** Real seconds of slow motion left (after a finishing move lands). */
+  private slowmo = 0;
+  private lastFinisher: FinisherKind | null = null;
   private combo = 0;
   private comboTimer = 0;
   private queued = false;
@@ -193,6 +222,47 @@ export class World {
     );
     this.collectMesh.frustumCulled = false;
     scene.add(this.collectMesh);
+
+    this.ragdollWorld = {
+      floor: (x, y, z) => {
+        let floor = groundHeight(x, z);
+        city.grid.query(x, z, x, z, (b) => {
+          if (x > b.minX && x < b.maxX && z > b.minZ && z < b.maxZ && b.maxY <= y + 0.3)
+            floor = Math.max(floor, b.maxY);
+        });
+        return floor;
+      },
+      pushOut: (p) => {
+        city.grid.query(p.x, p.z, p.x, p.z, (b) => {
+          if (p.x <= b.minX || p.x >= b.maxX || p.z <= b.minZ || p.z >= b.maxZ) return;
+          if (p.y <= b.minY || p.y >= b.maxY - 0.3) return;
+          // Inside a wall: out through the nearest side.
+          const opts = [
+            [p.x - b.minX, -1, 0],
+            [b.maxX - p.x, 1, 0],
+            [p.z - b.minZ, 0, -1],
+            [b.maxZ - p.z, 0, 1],
+          ] as const;
+          const best = [...opts].sort((a, c) => a[0] - c[0])[0]!;
+          p.x += best[1] * (best[0] + 0.02);
+          p.z += best[2] * (best[0] + 0.02);
+        });
+      },
+    };
+  }
+
+  /** Turn a knocked-out person into a rag doll, thrown with velocity `vel`. */
+  private startRagdoll(p: Person, vel: Vec3, spin: number): void {
+    const v = this.views.get(p.id);
+    if (!v) return;
+    v.root.updateMatrixWorld(true);
+    const points = v.jointPositions();
+    const r = new Ragdoll(points);
+    r.push(vel, spin, () => this.rng.next());
+    v.startRagdoll(points);
+    this.ragdolls.set(p.id, r);
+    p.state = 'down';
+    p.stateTime = 0;
   }
 
   /** Server clock offset (ms) so crimes match between players. */
@@ -231,8 +301,10 @@ export class World {
   }
 
   private releaseView(id: number): void {
+    this.ragdolls.delete(id);
     const v = this.views.get(id);
     if (!v) return;
+    v.endRagdoll();
     v.root.removeFromParent();
     this.views.delete(id);
     this.phases.delete(id);
@@ -350,8 +422,13 @@ export class World {
     return this.people.filter((p) => !p.gone && p.hp > 0 && p.state !== 'down');
   }
 
+  /** Game speed: slow motion right after a finishing move lands. */
+  get timeScale(): number {
+    return this.slowmo > 0 ? 0.3 : 1;
+  }
+
   startAttack(player: PlayerBody, aimYaw: number): void {
-    if (this.driving) return;
+    if (this.driving || this.finisher) return;
     if (this.attack && !this.attack.hitDone) {
       this.queued = true;
       return;
@@ -455,6 +532,12 @@ export class World {
         Math.hypot(dx, dz) > 1
       )
         continue;
+      // The last hit on a bad guy becomes a finishing move.
+      const badGuy = p.kind === 'thug' || (p.kind === 'cop' && this.wanted > 0);
+      if (badGuy && p.hp <= dmg && player.mode === 'ground' && move !== 'diveKick') {
+        this.startFinisher(player, p);
+        return;
+      }
       this.damagePerson(p, dmg, p.x - player.pos.x, p.z - player.pos.z, force);
       hitAny = true;
     }
@@ -471,6 +554,102 @@ export class World {
     }
   }
 
+  private startFinisher(player: PlayerBody, target: Person): void {
+    // Never the same move twice in a row.
+    const kinds = (['tornado', 'dash', 'uppercut'] as const).filter((k) => k !== this.lastFinisher);
+    const kind = this.rng.pick(kinds);
+    this.lastFinisher = kind;
+    const dx = target.x - player.pos.x;
+    const dz = target.z - player.pos.z;
+    const len = Math.hypot(dx, dz) || 1;
+    this.finisher = { kind, t: 0, target, hit: false, dirX: dx / len, dirZ: dz / len };
+    this.attack = { move: kind, t: 0, duration: FINISHERS[kind].duration, hitDone: true };
+    this.queued = false;
+    player.yaw = Math.atan2(dx, dz);
+    player.vel.x = 0;
+    player.vel.z = 0;
+    // The target freezes in surprise.
+    setState(target, 'cower');
+    target.threatX = player.pos.x;
+    target.threatZ = player.pos.z;
+    this.cb.finisher(kind);
+    this.cb.sound('finisher');
+  }
+
+  private updateFinisher(dt: number, player: PlayerBody): void {
+    const f = this.finisher;
+    if (!f) return;
+    const before = f.t;
+    f.t += dt;
+    const spec = FINISHERS[f.kind];
+    const target = f.target;
+    const crossed = (at: number) => before < at && f.t >= at;
+    switch (f.kind) {
+      case 'tornado':
+        if (crossed(0.04)) {
+          player.vel.y = 7.5;
+          player.setMode('air');
+        }
+        if (f.t < spec.hitAt) {
+          player.vel.x = f.dirX * 2;
+          player.vel.z = f.dirZ * 2;
+        }
+        break;
+      case 'dash': {
+        if (f.t < 0.15) {
+          player.vel.x = 0;
+          player.vel.z = 0;
+        } else if (f.t < 0.34) {
+          // Shoot through the target, leaving shadows behind.
+          player.vel.x = f.dirX * 40;
+          player.vel.z = f.dirZ * 40;
+          this.fx.puff(
+            player.pos.x,
+            player.pos.y + 0.6,
+            player.pos.z,
+            3,
+            new THREE.Color(0.25, 0.2, 0.35),
+            0.4,
+          );
+        } else {
+          player.vel.x *= 0.85;
+          player.vel.z *= 0.85;
+        }
+        break;
+      }
+      case 'uppercut':
+        if (f.t < spec.hitAt) {
+          player.vel.x = 0;
+          player.vel.z = 0;
+        }
+        if (crossed(spec.hitAt)) {
+          player.vel.y = 11;
+          player.setMode('air');
+        }
+        break;
+    }
+    if (!f.hit && f.t >= spec.hitAt) {
+      f.hit = true;
+      const side = this.rng.chance(0.5) ? 1 : -1;
+      const throwVel: Vec3 =
+        f.kind === 'tornado'
+          ? { x: f.dirX * 20, y: 9, z: f.dirZ * 20 }
+          : f.kind === 'dash'
+            ? { x: -f.dirZ * 6 * side - f.dirX * 2, y: 9, z: f.dirX * 6 * side - f.dirZ * 2 }
+            : { x: f.dirX * 3, y: 20, z: f.dirZ * 3 };
+      const hp = target.hp;
+      this.damagePerson(target, hp + 1, f.dirX, f.dirZ, 12, throwVel);
+      this.fx.impact(target.x, target.y + 1.2, target.z);
+      this.cb.sound('kick');
+      this.cb.shake(0.7);
+      this.slowmo = 0.55;
+    }
+    if (f.t >= spec.duration) {
+      this.finisher = null;
+      this.attack = null;
+    }
+  }
+
   private hitCar(c: CarEntity, x: number, y: number, z: number): void {
     c.stunned = 4;
     c.traffic.speed = 0;
@@ -482,9 +661,26 @@ export class World {
     }
   }
 
-  damagePerson(p: Person, dmg: number, dx: number, dz: number, force: number): void {
+  damagePerson(
+    p: Person,
+    dmg: number,
+    dx: number,
+    dz: number,
+    force: number,
+    throwVel?: Vec3,
+  ): void {
     const innocent = p.kind === 'civ' || (p.kind === 'cop' && this.wanted === 0);
     const ko = hitPerson(p, dmg, dx, dz, force);
+    if (ko) {
+      // Knocked out: fly like a rag doll, a little differently every time.
+      const len = Math.hypot(dx, dz) || 1;
+      const vel = throwVel ?? {
+        x: (dx / len) * force * 1.1,
+        y: 3 + force * 0.45,
+        z: (dz / len) * force * 1.1,
+      };
+      this.startRagdoll(p, vel, this.rng.range(3, 8));
+    }
     this.fx.sparks(p.x, p.y + 1.2, p.z);
     if (innocent) {
       this.addWanted(POLICE.starPerInnocentHit);
@@ -909,8 +1105,12 @@ export class World {
     if (this.sinceHurt > PLAYER.regenDelay)
       this.hp = Math.min(PLAYER.maxHealth, this.hp + PLAYER.regenPerSecond * dt);
 
+    // Slow motion counts real time (dt here is already slowed down).
+    this.slowmo = Math.max(0, this.slowmo - dt / this.timeScale);
+    this.updateFinisher(dt, player);
+
     // Attack timing.
-    if (this.attack) {
+    if (this.attack && !this.finisher) {
       const a = this.attack;
       a.t += dt;
       if (a.move === 'diveKick') {
@@ -953,6 +1153,20 @@ export class World {
     let copsNear = false;
     for (const p of this.people) {
       const d = Math.hypot(p.x - px, p.z - pz);
+      const rag = this.ragdolls.get(p.id);
+      if (rag) {
+        // The rag doll moves the body; the person just follows its middle.
+        for (let k = 0, n = Math.ceil(dt * 60); k < n; k++) rag.step(dt / n, this.ragdollWorld);
+        const c = rag.centre();
+        p.x = c.x;
+        p.z = c.z;
+        p.y = this.ragdollWorld.floor(c.x, c.y, c.z);
+        p.stateTime += dt;
+        if ((p.kind === 'civ' || p.kind === 'cop') && p.stateTime > PEDS.knockoutTime)
+          p.gone = true;
+        if (p.crime < 0 && d > PEDS.despawnRadius) p.gone = true;
+        continue;
+      }
       const ev = stepPerson(p, {
         dt,
         city: this.city,
@@ -1209,9 +1423,16 @@ export class World {
         continue;
       }
       const v = this.viewFor(p);
+      v.setShadow(d < 45);
+      const rag = this.ragdolls.get(p.id);
+      if (rag) {
+        v.applyRagdoll(rag.pos);
+        const head = rag.point('headTop');
+        if (rag.asleep) this.fx.dizzy(head.x, head.y + 0.25, head.z, this.time);
+        continue;
+      }
       v.root.position.set(p.x, p.y, p.z);
       v.root.rotation.y = p.yaw;
-      v.setShadow(d < 45);
       const speed = Math.hypot(p.vx, p.vz);
       let phase = this.phases.get(p.id) ?? p.seed % 7;
       phase += (speed * dt * Math.PI * 2) / (speed > 3 ? 2.4 : 1.3);

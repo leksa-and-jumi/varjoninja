@@ -141,6 +141,41 @@ export class Effects {
     }
   }
 
+  /** Big comic-book burst for finishing moves. */
+  impact(x: number, y: number, z: number): void {
+    const colors = [
+      new THREE.Color(1, 0.95, 0.6),
+      new THREE.Color(1, 0.6, 0.15),
+      new THREE.Color(1, 1, 1),
+    ];
+    for (let i = 0; i < 46; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const b = (Math.random() - 0.5) * Math.PI;
+      const s = 7 + Math.random() * 9;
+      this.spawn(x, y, z, colors[i % 3]!, {
+        life: 0.3 + Math.random() * 0.25,
+        vx: Math.cos(a) * Math.cos(b) * s,
+        vy: Math.sin(b) * s,
+        vz: Math.sin(a) * Math.cos(b) * s,
+        size: 0.25 + Math.random() * 0.35,
+        grow: -0.6,
+        gravity: 0,
+        drag: 5,
+      });
+    }
+    // A quick bright flash in the middle.
+    this.spawn(x, y, z, new THREE.Color(1, 1, 0.9), {
+      life: 0.18,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      size: 2.4,
+      grow: 6,
+      gravity: 0,
+      drag: 0,
+    });
+  }
+
   /** Golden sparkles for pickups and rewards. */
   sparkle(x: number, y: number, z: number, color = new THREE.Color(1, 0.85, 0.2)): void {
     for (let i = 0; i < 26; i++) {
