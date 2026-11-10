@@ -41,6 +41,8 @@ export interface MenuActions {
   /** The outfit screen opened (true) or closed (false). */
   outfit(open: boolean): void;
   language(l: Lang): void;
+  /** Open the invite panel (starts a room first if playing alone). */
+  invite(): void;
 }
 
 function html(parent: HTMLElement, cls: string, inner: string): HTMLDivElement {
@@ -78,6 +80,7 @@ export class Menus {
       if (!b || b.closest('form')) return;
       actions.click();
       if (a === 'play') actions.play();
+      if (a === 'joinInvite' && this.invitedCode) actions.join(this.invitedCode);
       if (a === 'host') actions.host();
       if (a === 'outfit') this.showOutfit();
       if (a === 'settings') this.showSettings('title');
@@ -99,10 +102,12 @@ export class Menus {
       actions.click();
       if (a === 'resume') actions.resume();
       if (a === 'quit') actions.quit();
+      if (a === 'invite') actions.invite();
       if (a === 'outfit') this.showOutfit('pause');
       if (a === 'settings') this.showSettings('pause');
     });
     this.settingsPanel = html(parent, 'screen settings hidden', '');
+    this.invitePanel = html(parent, 'screen invite hidden', '');
     this.ko = html(parent, 'screen ko hidden', '');
     this.renderTexts();
   }
@@ -116,7 +121,12 @@ export class Menus {
         <div class="logo">VARJONINJA</div>
         <p class="tagline">${t('tagline')}</p>
         <div class="buttons">
-          <button class="big" data-a="play">${t('play')}</button>
+          ${
+            this.invitedCode
+              ? `<div class="invited"><b>${t('invited')}</b><span>${this.invitedCode}</span><button class="big" data-a="joinInvite">${t('joinInvite')}</button></div>`
+              : ''
+          }
+          <button class="${this.invitedCode ? '' : 'big'}" data-a="play">${t('play')}</button>
           <button data-a="host">${t('host')}</button>
           <form class="join"><input maxlength="32" placeholder="${t('joinPlaceholder')}" autocomplete="off" spellcheck="false" /><button type="submit">${t('join')}</button></form>
           <div class="row">
@@ -134,6 +144,7 @@ export class Menus {
     this.pause.innerHTML = `<div class="panel">
         <h2>${t('pauseTitle')}</h2>
         <button class="big" data-a="resume">${t('resume')}</button>
+        <button data-a="invite">${t('invite')}</button>
         <button data-a="outfit">${t('outfitButton')}</button>
         <button data-a="settings">${t('settingsButton')}</button>
         <button data-a="quit">${t('quit')}</button>
@@ -150,6 +161,44 @@ export class Menus {
   }
 
   private back: 'title' | 'pause' = 'title';
+  private invitePanel: HTMLDivElement;
+  /** Room code from an invite link (?huone=…). */
+  private invitedCode: string | null = null;
+
+  setInvited(code: string): void {
+    this.invitedCode = code;
+    this.renderTexts();
+  }
+
+  /** Show the room code and a link that joins it. */
+  showInvite(code: string, link: string): void {
+    this.pause.classList.add('hidden');
+    this.invitePanel.innerHTML = `<div class="panel">
+      <h2>${t('invite')}</h2>
+      <p>${t('inviteText')}</p>
+      <input class="invite-link" readonly value="${link}" />
+      <button class="big" data-a="copy">${t('copyLink')}</button>
+      <p>${t('inviteCode')}</p>
+      <div class="invite-code">${code}</div>
+      <button data-a="done">${t('done')}</button>
+    </div>`;
+    this.invitePanel.classList.remove('hidden');
+    this.invitePanel.onclick = (e) => {
+      const b = (e.target as HTMLElement).closest('button');
+      if (!b) return;
+      this.actions.click();
+      if (b.dataset['a'] === 'copy') {
+        const input = this.invitePanel.querySelector('input')!;
+        input.select();
+        void navigator.clipboard?.writeText(link).catch(() => document.execCommand('copy'));
+        b.textContent = t('copied');
+      }
+      if (b.dataset['a'] === 'done') {
+        this.invitePanel.classList.add('hidden');
+        this.pause.classList.remove('hidden');
+      }
+    };
+  }
 
   hideLoading(): void {
     this.loading.classList.add('hidden');
@@ -164,6 +213,7 @@ export class Menus {
     if (!on) {
       this.outfit.classList.add('hidden');
       this.settingsPanel.classList.add('hidden');
+      this.invitePanel.classList.add('hidden');
     }
   }
 

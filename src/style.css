@@ -867,3 +867,55 @@ kbd {
     grid-template-columns: repeat(5, 34px);
   }
 }
+
+/* ---------- Invite ---------- */
+
+.invite {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.invite p {
+  margin: 0;
+  color: var(--muted);
+  max-width: 420px;
+}
+
+.invite-link {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.45);
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  color: #fff;
+  padding: 10px 12px;
+  font:
+    600 14px 'Nunito',
+    'Noto Sans Thai',
+    sans-serif;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+.invite-code {
+  font-family: 'Bangers', sans-serif;
+  font-size: 44px;
+  letter-spacing: 0.06em;
+  color: var(--gold);
+  text-align: center;
+}
+
+.invited {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255, 200, 61, 0.15);
+  border: 2px solid var(--gold);
+}
+
+.invited span {
+  font-family: 'Bangers', sans-serif;
+  font-size: 30px;
+  letter-spacing: 0.06em;
+  color: var(--gold);
+}

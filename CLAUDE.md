@@ -37,7 +37,7 @@ Tämä repo kuuluu Julius (7 v) ja Leo (10 v) -veljesten pelistudioon (GitHub-or
 - **Autot** (`public/models/car_*.glb`): sedan, taksi, poliisi, pakettiauto, urheiluauto. Materiaalien nimet (`paint`, `headlight`, `siren_red`…) korvataan pelissä; renkaat ovat omia objektejaan.
 - Mallien muutos: muokkaa `blender/build_models.py` ja aja `npm run models` (Blender asennettu Homebrew'lla: `/Applications/Blender.app`). Commitoi syntyneet `.glb`-tiedostot.
 - **Rikokset** tulevat kellosta ja huoneen siemenestä (`crimeForSlot`): kaikki saman huoneen pelaajat näkevät saman rikoksen samassa paikassa. Verkossa kulkee vain "ratkaistu".
-- **Sätkynuket** (`src/logic/ragdoll.ts`): tyrmätty ihminen muuttuu 20 nivelpisteen verlet-ragdolliksi (tikut + tukitikut, lattia ja seinät). `CharacterView.startRagdoll/applyRagdoll` kääntää luut pisteiden mukaan (vartalo kahden vektorin kehyksellä, raajat pienimmällä kierrolla). Ragdoll nukahtaa, kun se on liikkumatta, eikä silloin maksa laskentaa.
+- **Sätkynuket** (`src/logic/ragdoll.ts`): tyrmätty ihminen kaatuu ensin jäykkänä (lihakset: polvet pettävät 0,35 s, kädet 0,6 s, selkä 1,1 s), ottaa käsillä vastaan ja lyyhistyy; tavallinen isku kaataa eikä lennätä (vain erikoisliikkeet heittävät kauas). Ragdoll on muuttuu 20 nivelpisteen verlet-ragdolliksi (tikut + tukitikut, lattia ja seinät). `CharacterView.startRagdoll/applyRagdoll` kääntää luut pisteiden mukaan (vartalo kahden vektorin kehyksellä, raajat pienimmällä kierrolla). Ragdoll nukahtaa, kun se on liikkumatta, eikä silloin maksa laskentaa.
 - **Erikoisliikkeet** (`World.startFinisher`): viimeinen isku roistoon (tai poliisiin tähtien aikana) maassa muuttuu satunnaiseksi erikoisliikkeeksi: myrskypotku, varjoviilto tai lohikäärmenyrkki (ei koskaan samaa kahdesti peräkkäin). Osuessa hidastus (`World.timeScale` 0,3), sarjakuvaräjähdys (`Effects.impact`), valkoinen välähdys ja liikkeen nimi ruudulla. Verkossa liikkeet kulkevat hyökkäysindeksinä (`ATTACKS` remotes.ts:ssä, lisää vain loppuun).
 - **Kielet** (`src/i18n.ts`): suomi, englanti ja thai. Kaikki pelaajalle näkyvät tekstit haetaan `t('avain')`-funktiolla; uusi teksti lisätään kaikkiin kolmeen kieleen (testi tarkistaa). Kieli tallentuu asetuksiin. Thai-kirjaimet tulevat Noto Sans Thai -fontista. Mainostaulut kaupungissa ovat suomeksi (kaupungin omat mainokset).
 - **Autokamera** (`CameraRig.updateCar`, vakiot `CAR_CAMERA`): pysyy auton takana, katsoo nopeuden mukaan eteenpäin, palaa taakse kun hiirellä ei ole katsottu hetkeen. `C` vaihtaa lähi-/kaukokuvan.
@@ -47,6 +47,12 @@ Tämä repo kuuluu Julius (7 v) ja Leo (10 v) -veljesten pelistudioon (GitHub-or
 
 - `QUALITY` (game.ts): _Kevyt_ ilman varjoja, _Keski_ 2048-varjokartta, _Hieno_ 4096-varjokartta (140 m alue) + GTAO-kulmavarjostus puolella tarkkuudella. Varjokamera napsahtaa tekseleihin (ei välkettä).
 - Kaupungin realismi on shaderissa (`materials.ts`): ikkunakarmit, ikkunalaudat, syvennyksen varjo, verhot, sadevanat, katutason lika ja paneelisaumat. Katoilla on reunamuurit (`PARAPET`, myös törmäyksissä).
+
+## Kaverin kutsuminen
+
+- Taukovalikon **Kutsu kaveri** avaa paneelin, jossa on huoneen koodi ja linkki `…/varjoninja/?huone=KOODI` (kopioi-nappi). Yksin pelatessa nappi luo ensin uuden huoneen.
+- Kun peli avataan kutsulinkillä, alkuvalikossa näkyy "Kaveri kutsui sinut peliin!" ja nappi, jolla pääsee suoraan samaan huoneeseen.
+- **Chattia ja verta ei ole.** Julius toivoi molempia (2026-11-10); ne lisätään vain, jos vanhempi erikseen sallii.
 
 ## Cloudflare-kiintiö (tärkeä)
 
