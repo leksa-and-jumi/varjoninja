@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MODEL_VERSION } from '../config';
 
 export type CarModel = 'sedan' | 'taxi' | 'police' | 'van' | 'sports';
 export const CAR_MODELS: CarModel[] = ['sedan', 'taxi', 'police', 'van', 'sports'];
@@ -13,7 +14,7 @@ export async function loadCarModels(baseUrl: string): Promise<void> {
   const loader = new GLTFLoader();
   await Promise.all(
     CAR_MODELS.map(async (m) => {
-      const gltf = await loader.loadAsync(`${baseUrl}models/car_${m}.glb`);
+      const gltf = await loader.loadAsync(`${baseUrl}models/car_${m}.glb?v=${MODEL_VERSION}`);
       templates.set(m, gltf.scene);
     }),
   );

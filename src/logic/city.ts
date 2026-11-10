@@ -28,6 +28,8 @@ export interface Building {
   district: District;
   /** Top of the highest box. */
   height: number;
+  /** Low walls around the roof edges. */
+  parapets: Box[];
 }
 
 export type PropKind = 'ac' | 'waterTower' | 'antenna' | 'helipad' | 'billboard';
@@ -240,7 +242,26 @@ function makeBuilding(
     seed: rng.int(0, 1 << 20),
     district,
     height: Math.max(...boxes.map((b) => b.maxY)),
+    parapets: boxes.flatMap((b) => parapetsFor(b)),
   };
+}
+
+export const PARAPET = { height: 1.1, thickness: 0.35 } as const;
+
+/** Four thin walls along the roof edge of a box. */
+function parapetsFor(b: Box): Box[] {
+  const w = b.maxX - b.minX;
+  const d = b.maxZ - b.minZ;
+  if (w < 8 || d < 8) return [];
+  const { height: h, thickness: t } = PARAPET;
+  const y0 = b.maxY;
+  const y1 = b.maxY + h;
+  return [
+    box(b.minX, y0, b.minZ, b.maxX, y1, b.minZ + t),
+    box(b.minX, y0, b.maxZ - t, b.maxX, y1, b.maxZ),
+    box(b.minX, y0, b.minZ + t, b.minX + t, y1, b.maxZ - t),
+    box(b.maxX - t, y0, b.minZ + t, b.maxX, y1, b.maxZ - t),
+  ];
 }
 
 function snapFloor(h: number): number {
@@ -343,7 +364,7 @@ export function generateCity(seed: number = CITY.seed): City {
         for (const lot of splitLots(rng, inner, district)) {
           const b = makeBuilding(rng, buildings.length, lot, district, centrality);
           buildings.push(b);
-          colliders.push(...b.boxes);
+          colliders.push(...b.boxes, ...b.parapets);
           addRoofProps(rng, b, roofProps, colliders);
         }
       } else if (kind === 'park') {

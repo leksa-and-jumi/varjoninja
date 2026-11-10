@@ -22,6 +22,9 @@ export class SkyView {
   private lastEnvNight = -1;
   private lastEnvSunY = -2;
   state: SunState = sunState(0.4);
+  private shadowTexel = 1;
+  private lightBasis = new THREE.Matrix4();
+  private lightBasisInv = new THREE.Matrix4();
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -45,14 +48,17 @@ export class SkyView {
     if (shadowSize > 0) {
       this.sun.shadow.mapSize.set(shadowSize, shadowSize);
       const cam = this.sun.shadow.camera;
-      cam.left = -90;
-      cam.right = 90;
-      cam.top = 90;
-      cam.bottom = -90;
+      // Bigger shadow maps cover more of the city (long building shadows across the streets).
+      const ext = shadowSize >= 4096 ? 140 : 100;
+      this.shadowTexel = (ext * 2) / shadowSize;
+      cam.left = -ext;
+      cam.right = ext;
+      cam.top = ext;
+      cam.bottom = -ext;
       cam.near = 1;
       cam.far = 900;
-      this.sun.shadow.bias = -0.0004;
-      this.sun.shadow.normalBias = 0.6;
+      this.sun.shadow.bias = -0.0003;
+      this.sun.shadow.normalBias = 0.35;
     }
     scene.add(this.sun, this.sun.target, this.hemi);
 
@@ -80,9 +86,16 @@ export class SkyView {
     if (s.y <= -0.05) sunColor.setRGB(0.55, 0.65, 1);
     this.sun.color.copy(sunColor);
     this.sun.intensity = s.y > -0.05 ? 0.3 + 2.3 * dayLight : 0.3 * s.night;
-    this.sun.position.copy(focus).addScaledVector(lightDir, 400);
-    this.sun.target.position.copy(focus);
-    // Snap the shadow camera to texels so shadows don't shimmer while moving.
+    // Snap the shadow camera to whole shadow-map texels, so shadow edges don't shimmer
+    // while the ninja moves.
+    this.lightBasis.lookAt(lightDir, new THREE.Vector3(), new THREE.Vector3(0, 1, 0));
+    this.lightBasisInv.copy(this.lightBasis).invert();
+    const snapped = focus.clone().applyMatrix4(this.lightBasisInv);
+    snapped.x = Math.round(snapped.x / this.shadowTexel) * this.shadowTexel;
+    snapped.y = Math.round(snapped.y / this.shadowTexel) * this.shadowTexel;
+    snapped.applyMatrix4(this.lightBasis);
+    this.sun.position.copy(snapped).addScaledVector(lightDir, 400);
+    this.sun.target.position.copy(snapped);
     // Moonlit nights: dim but never pitch black.
     this.hemi.intensity = 0.45 + 0.1 * dayLight;
     this.hemi.color.setRGB(0.75, 0.85, 1).lerp(new THREE.Color(0.32, 0.4, 0.68), s.night);

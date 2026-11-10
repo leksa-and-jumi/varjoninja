@@ -1,7 +1,7 @@
 // Builds the Three.js meshes for the whole city from the generated city data.
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CITY, CITY_HALF } from '../config';
 import type { Building, City, CityBlock, Placed, RoofProp } from '../logic/city';
 import type { Box } from '../logic/geom';
@@ -47,7 +47,7 @@ function buildingGeometry(buildings: Building[]): THREE.BufferGeometry {
   };
 
   for (const b of buildings) {
-    for (const bx of b.boxes) {
+    for (const bx of [...b.boxes, ...b.parapets]) {
       const { minX: x0, minY: y0, minZ: z0, maxX: x1, maxY: y1, maxZ: z1 } = bx;
       // +Z face (looking from +Z toward -Z, left is -X)
       quad(
@@ -257,27 +257,103 @@ function helipadTexture(): THREE.CanvasTexture {
 }
 
 function treeGeometries(): { trunk: THREE.BufferGeometry; crown: THREE.BufferGeometry } {
-  const trunk = new THREE.CylinderGeometry(0.16, 0.24, 3, 6);
-  trunk.translate(0, 1.5, 0);
+  // Trunk with a few branches reaching into the leaves.
+  const parts: THREE.BufferGeometry[] = [];
+  const stem = new THREE.CylinderGeometry(0.14, 0.26, 3.4, 8);
+  stem.translate(0, 1.7, 0);
+  parts.push(stem);
+  for (const [a, tilt] of [
+    [0.3, 0.7],
+    [2.4, 0.6],
+    [4.3, 0.8],
+  ] as const) {
+    const br = new THREE.CylinderGeometry(0.05, 0.1, 1.8, 6);
+    br.translate(0, 0.9, 0);
+    br.rotateZ(tilt);
+    br.rotateY(a);
+    br.translate(0, 3, 0);
+    parts.push(br);
+  }
+  const trunk = mergeGeometries(parts.map((p) => p.toNonIndexed()))!;
+  trunk.computeVertexNormals();
+
+  // Leaves: many soft lumps, so the crown looks fluffy instead of faceted.
   const rng = new Rng(7);
   const blobs: THREE.BufferGeometry[] = [];
-  for (const [x, y, z, r] of [
-    [0, 4.2, 0, 2.1],
-    [0.9, 3.6, 0.4, 1.4],
-    [-0.8, 3.7, -0.5, 1.5],
-    [0.2, 5.3, -0.2, 1.3],
-  ] as const) {
-    const s = new THREE.IcosahedronGeometry(r, 1);
+  const lumps: [number, number, number, number][] = [[0, 4.4, 0, 1.9]];
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2 + rng.range(-0.3, 0.3);
+    const r = rng.range(1.0, 1.6);
+    lumps.push([Math.cos(a) * r, rng.range(3.6, 5.4), Math.sin(a) * r, rng.range(0.9, 1.35)]);
+  }
+  for (const [x, y, z, r] of lumps) {
+    // Shared vertices (mergeVertices), so the bumps stay closed and the shading smooth.
+    const ico = new THREE.IcosahedronGeometry(r, 2);
+    ico.deleteAttribute('normal');
+    ico.deleteAttribute('uv');
+    const s = mergeVertices(ico);
     const p = s.getAttribute('position');
     for (let i = 0; i < p.count; i++) {
-      const k = 1 + rng.range(-0.12, 0.12);
-      p.setXYZ(i, p.getX(i) * k + x, p.getY(i) * k + y, p.getZ(i) * k + z);
+      const vx = p.getX(i);
+      const vy = p.getY(i);
+      const vz = p.getZ(i);
+      const k = 1 + 0.09 * Math.sin(vx * 5.1 + vy * 3.7) * Math.cos(vz * 4.3 - vy * 2.9);
+      p.setXYZ(i, vx * k + x, vy * k * 0.9 + y, vz * k + z);
     }
+    s.computeVertexNormals();
     blobs.push(s);
   }
-  const crown = mergeGeometries(blobs.map((b) => b.toNonIndexed()))!;
-  crown.computeVertexNormals();
+  const crown = mergeGeometries(blobs)!;
   return { trunk, crown };
+}
+
+/** Fire hydrants and rubbish bins along the sidewalks. */
+function streetFurniture(city: City): { hydrants: Placed[]; bins: Placed[] } {
+  const hydrants: Placed[] = [];
+  const bins: Placed[] = [];
+  const rng = new Rng(11);
+  for (const b of city.blocks) {
+    if (b.kind !== 'buildings') continue;
+    const inset = 0.7;
+    // One hydrant near a corner, bins every so often along each side.
+    hydrants.push({ x: b.minX + 6, z: b.minZ + inset, rot: 0, scale: 1 });
+    for (const [x0, z0, x1, z1, rot] of [
+      [b.minX, b.minZ + inset, b.maxX, b.minZ + inset, 0],
+      [b.minX, b.maxZ - inset, b.maxX, b.maxZ - inset, Math.PI],
+      [b.minX + inset, b.minZ, b.minX + inset, b.maxZ, Math.PI / 2],
+      [b.maxX - inset, b.minZ, b.maxX - inset, b.maxZ, -Math.PI / 2],
+    ] as const) {
+      const t = rng.range(0.3, 0.7);
+      if (rng.chance(0.7))
+        bins.push({ x: x0 + (x1 - x0) * t, z: z0 + (z1 - z0) * t, rot, scale: 1 });
+    }
+  }
+  return { hydrants, bins };
+}
+
+function hydrantGeometry(): THREE.BufferGeometry {
+  const body = new THREE.CylinderGeometry(0.16, 0.18, 0.7, 10);
+  body.translate(0, 0.35, 0);
+  const cap = new THREE.SphereGeometry(0.17, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+  cap.translate(0, 0.7, 0);
+  const nozzle = new THREE.CylinderGeometry(0.07, 0.07, 0.48, 8);
+  nozzle.rotateZ(Math.PI / 2);
+  nozzle.translate(0, 0.48, 0);
+  const base = new THREE.CylinderGeometry(0.22, 0.22, 0.08, 10);
+  base.translate(0, 0.04, 0);
+  return mergeGeometries([body, cap, nozzle, base].map((g) => g.toNonIndexed()))!;
+}
+
+function binGeometry(): THREE.BufferGeometry {
+  const can = new THREE.CylinderGeometry(0.3, 0.26, 0.9, 12, 1, true);
+  can.translate(0, 0.45, 0);
+  const rim = new THREE.TorusGeometry(0.3, 0.03, 6, 16);
+  rim.rotateX(Math.PI / 2);
+  rim.translate(0, 0.9, 0);
+  const bottom = new THREE.CircleGeometry(0.26, 12);
+  bottom.rotateX(-Math.PI / 2);
+  bottom.translate(0, 0.02, 0);
+  return mergeGeometries([can, rim, bottom].map((g) => g.toNonIndexed()))!;
 }
 
 function lampGeometries(): { pole: THREE.BufferGeometry; head: THREE.BufferGeometry } {
@@ -587,12 +663,12 @@ export function buildCityView(city: City): CityView {
   // Trees
   const { trunk, crown } = treeGeometries();
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5a4130, roughness: 1 });
-  const crownMat = new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true });
+  const crownMat = new THREE.MeshStandardMaterial({ roughness: 0.85 });
   const rng = new Rng(3);
   const treeY = () => CITY.sidewalkHeight;
   const trunks = instanced(trunk, trunkMat, city.trees, treeY);
   const crowns = instanced(crown, crownMat, city.trees, treeY, () =>
-    new THREE.Color().setHSL(rng.range(0.22, 0.33), rng.range(0.45, 0.6), rng.range(0.22, 0.32)),
+    new THREE.Color().setHSL(rng.range(0.2, 0.3), rng.range(0.35, 0.55), rng.range(0.16, 0.26)),
   );
   for (const m of [trunks, crowns]) {
     m.castShadow = true;
@@ -639,6 +715,29 @@ export function buildCityView(city: City): CityView {
   );
 
   for (const block of city.blocks) if (block.kind === 'plaza') root.add(fountain(block));
+
+  const furniture = streetFurniture(city);
+  const hydrants = instanced(
+    hydrantGeometry(),
+    new THREE.MeshStandardMaterial({ color: 0xc62b23, roughness: 0.5, metalness: 0.2 }),
+    furniture.hydrants,
+    lampY,
+  );
+  const bins = instanced(
+    binGeometry(),
+    new THREE.MeshStandardMaterial({
+      color: 0x2f5a3c,
+      roughness: 0.6,
+      metalness: 0.4,
+      side: THREE.DoubleSide,
+    }),
+    furniture.bins,
+    lampY,
+  );
+  for (const m of [hydrants, bins]) {
+    m.castShadow = true;
+    root.add(m);
+  }
   for (const o of roofPropMeshes(city.roofProps, view)) root.add(o);
 
   return view;
