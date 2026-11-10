@@ -68,6 +68,11 @@ Ilmaisessa tasossa on 100 000 pyyntöä päivässä (WebSocket-viestit lasketaan
 
 `.env.local` (pohja `.env.example`): `VITE_ROOM_URL` (paikallisesti `http://localhost:8791`), `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (`npm run room:deploy`). GitHub Actions -deploy käyttää secretejä `CLOUDFLARE_API_TOKEN` ja `CLOUDFLARE_ACCOUNT_ID`; huonepalvelimen osoite on `deploy.yml`:ssä.
 
+## Huonekoodit
+
+- Koodit ovat muotoa `SANA-SANA-NN` ilman Ä/Ö-kirjaimia (`makeRoomCode`). Kirjoitettu koodi siivotaan (`normalizeRoomCode`: isot kirjaimet, Ä→A, Ö→O, välilyönnit → viiva). Koodikenttään mahtuu 32 merkkiä.
+- Paikallinen peli käyttää oikeaa huonepalvelinta (`.env.local`: `VITE_ROOM_URL=https://varjoninja-huoneet.mrjv.workers.dev`), jotta esikatselussa pelaava ja netissä pelaava kaveri ovat samassa huoneessa. Protokollaa muuttaessa käytä paikallista palvelinta (`npm run dev:room`, `http://localhost:8791`).
+
 ## Kehitysputki (aina sama)
 
 1. Idea → GitHub issue (otsikko englanniksi, kuvaus Juliuksen omin sanoin suomeksi).

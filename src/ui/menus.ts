@@ -128,7 +128,7 @@ export class Menus {
           }
           <button class="${this.invitedCode ? '' : 'big'}" data-a="play">${t('play')}</button>
           <button data-a="host">${t('host')}</button>
-          <form class="join"><input maxlength="14" placeholder="${t('joinPlaceholder')}" autocomplete="off" spellcheck="false" /><button type="submit">${t('join')}</button></form>
+          <form class="join"><input maxlength="32" placeholder="${t('joinPlaceholder')}" autocomplete="off" spellcheck="false" /><button type="submit">${t('join')}</button></form>
           <div class="row">
             <button data-a="outfit">${t('outfitButton')}</button>
             <button data-a="settings">${t('settingsButton')}</button>
