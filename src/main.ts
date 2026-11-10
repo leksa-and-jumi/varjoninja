@@ -73,6 +73,10 @@ async function main(): Promise<void> {
       sounds.unlock();
       sounds.play('ui');
     },
+    invite: () => {
+      if (!room && !connectRoom(makeRoomCode())) return;
+      if (room) menus.showInvite(room.code, inviteLink(room.code));
+    },
     language: (l) => {
       settings.language = l;
       saveSettings(settings);
@@ -158,6 +162,58 @@ async function main(): Promise<void> {
   });
 
   // --- Starting, pausing ------------------------------------------------------------------
+  /** Join (or start) a room. Returns false if multiplayer is not available. */
+  function connectRoom(code: string): boolean {
+    if (!RoomClient.available()) {
+      hud.notify(t('noMultiplayer'), t('playingAlone'), '📡');
+      return false;
+    }
+    room?.close();
+    remotes.clear();
+    game.world.roomSeed = roomSeed(code);
+    room = new RoomClient(code, toNet(profile.colors), {
+      status: (s) => {
+        if (s === 'open') hud.notify(t('connected'), t('tellCode', { code }), '👥');
+        if (s === 'closed') hud.notify(t('disconnected'), t('retrying'), '📡');
+        if (s === 'full') hud.notify(t('roomFull'), t('playingAlone'), '🚪');
+      },
+      message: (m) => {
+        const now = performance.now();
+        switch (m.t) {
+          case 'welcome':
+            clockOffset = m.time - Date.now();
+            game.world.setClockOffset(clockOffset);
+            for (const [id, c] of m.players) remotes.add(id, c);
+            for (const c of m.solved) game.world.solved.add(c);
+            break;
+          case 'join':
+            remotes.add(m.id, m.colors);
+            hud.notify(t('friendJoined'), t('solveTogether'), '🥷');
+            break;
+          case 'leave':
+            remotes.remove(m.id);
+            hud.notify(t('friendLeft'), '', '👋');
+            break;
+          case 'state':
+            remotes.state(m.id, m.s, now);
+            break;
+          case 'solved':
+            game.world.markSolved(m.crime, false);
+            break;
+          case 'smoke':
+            game.fx.puff(m.x, m.y + 0.3, m.z, 50, new THREE.Color(0.55, 0.55, 0.62), 6);
+            break;
+        }
+      },
+    });
+    room.connect();
+    return true;
+  }
+
+  function inviteLink(code: string): string {
+    return `${location.origin}${location.pathname}?huone=${encodeURIComponent(code)}`;
+  }
+
   function startPlaying(code: string | null): void {
     sounds.unlock();
     menus.showTitle(false);
@@ -166,47 +222,7 @@ async function main(): Promise<void> {
     game.state = 'play';
     game.input.reset();
     if (!touch) void game.renderer.domElement.requestPointerLock?.()?.catch?.(() => {});
-    if (code && RoomClient.available()) {
-      game.world.roomSeed = roomSeed(code);
-      room = new RoomClient(code, toNet(profile.colors), {
-        status: (s) => {
-          if (s === 'open') hud.notify(t('connected'), t('tellCode', { code }), '👥');
-          if (s === 'closed') hud.notify(t('disconnected'), t('retrying'), '📡');
-          if (s === 'full') hud.notify(t('roomFull'), t('playingAlone'), '🚪');
-        },
-        message: (m) => {
-          const now = performance.now();
-          switch (m.t) {
-            case 'welcome':
-              clockOffset = m.time - Date.now();
-              game.world.setClockOffset(clockOffset);
-              for (const [id, c] of m.players) remotes.add(id, c);
-              for (const c of m.solved) game.world.solved.add(c);
-              break;
-            case 'join':
-              remotes.add(m.id, m.colors);
-              hud.notify(t('friendJoined'), t('solveTogether'), '🥷');
-              break;
-            case 'leave':
-              remotes.remove(m.id);
-              hud.notify(t('friendLeft'), '', '👋');
-              break;
-            case 'state':
-              remotes.state(m.id, m.s, now);
-              break;
-            case 'solved':
-              game.world.markSolved(m.crime, false);
-              break;
-            case 'smoke':
-              game.fx.puff(m.x, m.y + 0.3, m.z, 50, new THREE.Color(0.55, 0.55, 0.62), 6);
-              break;
-          }
-        },
-      });
-      room.connect();
-    } else if (code) {
-      hud.notify(t('noMultiplayer'), t('playingAlone'), '📡');
-    }
+    if (code) connectRoom(code);
     if (game.world.heroPoints === 0) {
       hud.bigMessage('VARJOSAARI', t('welcome'));
     }
@@ -336,6 +352,10 @@ async function main(): Promise<void> {
       hud.setHelp(settings.showHelp && !touch);
     }
   });
+
+  // Opened from an invite link: offer to join the friend's game.
+  const invited = normalizeRoomCode(new URLSearchParams(location.search).get('huone') ?? '');
+  if (isValidRoomCode(invited)) menus.setInvited(invited);
 
   menus.hideLoading();
   menus.showTitle(true);

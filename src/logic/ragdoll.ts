@@ -106,6 +106,24 @@ const HINGES: { top: Joint; mid: Joint; end: Joint; dir: 1 | -1 }[] = [
   { top: 'shoulderR', mid: 'elbowR', end: 'wristR', dir: -1 },
 ];
 
+/**
+ * "Muscles": right after the hit the body still holds its shape, so it stumbles and buckles
+ * instead of flopping like a doll. Each group lets go after its own time (seconds):
+ * the knees give way first, the arms next, the back and neck last.
+ */
+const MUSCLE_GROUPS: { joints: Joint[]; relax: number }[] = [
+  {
+    joints: ['pelvis', 'chest', 'neck', 'headTop', 'shoulderL', 'shoulderR', 'hipL', 'hipR'],
+    relax: 1.1,
+  },
+  { joints: ['hipL', 'kneeL', 'ankleL', 'pelvis'], relax: 0.35 },
+  { joints: ['hipR', 'kneeR', 'ankleR', 'pelvis'], relax: 0.35 },
+  { joints: ['shoulderL', 'elbowL', 'wristL', 'chest'], relax: 0.6 },
+  { joints: ['shoulderR', 'elbowR', 'wristR', 'chest'], relax: 0.6 },
+];
+/** Hands reach out to break the fall during this time window (seconds). */
+const BRACE = { from: 0.12, to: 0.7, accel: 30 };
+
 const GRAVITY = 24;
 /** How much of the speed is kept when hitting the floor hard (a small bounce). */
 const BOUNCE = 0.25;
@@ -125,6 +143,12 @@ export class Ragdoll {
   private sticks: { a: number; b: number; len: number }[];
   private inv = JOINTS.map((j) => 1 / MASS[j]);
   private mins: { a: number; b: number; len: number }[];
+  private muscles: { a: number; b: number; len: number; relax: number }[] = [];
+  /** Seconds since the knockout. */
+  private age = 0;
+  /** Which way the body is falling (unit, horizontal). */
+  private fallX = 0;
+  private fallZ = 0;
   /** Seconds of (almost) no movement. */
   private still = 0;
   asleep = false;
@@ -140,6 +164,15 @@ export class Ragdoll {
     };
     this.sticks = STICKS.map(([a, b]) => ({ a: J(a), b: J(b), len: dist(J(a), J(b)) }));
     this.mins = MIN_STICKS.map(([a, b, k]) => ({ a: J(a), b: J(b), len: dist(J(a), J(b)) * k }));
+    for (const g of MUSCLE_GROUPS) {
+      for (let i = 0; i < g.joints.length; i++) {
+        for (let k = i + 1; k < g.joints.length; k++) {
+          const a = J(g.joints[i]!);
+          const b = J(g.joints[k]!);
+          this.muscles.push({ a, b, len: dist(a, b), relax: g.relax });
+        }
+      }
+    }
   }
 
   point(name: Joint): Vec3 {
@@ -167,12 +200,26 @@ export class Ragdoll {
       q.y = p.y - (vel.y * k + jitter() * 0.5) * dt;
       q.z = p.z - (vel.z * k + jitter()) * dt;
     });
+    const h = Math.hypot(vel.x, vel.z);
+    this.fallX = h > 0.01 ? vel.x / h : 0;
+    this.fallZ = h > 0.01 ? vel.z / h : 0;
     this.asleep = false;
     this.still = 0;
   }
 
   step(dt: number, world: RagdollWorld): void {
     if (this.asleep) return;
+    this.age += dt;
+    // Hands reach forward and down to catch the fall.
+    if (this.age > BRACE.from && this.age < BRACE.to) {
+      for (const hand of [J('handL'), J('handR')]) {
+        const p = this.pos[hand]!;
+        const a = BRACE.accel * dt * dt;
+        p.x += this.fallX * a;
+        p.y -= a * 0.5;
+        p.z += this.fallZ * a;
+      }
+    }
     let motion = 0;
     for (let i = 0; i < this.pos.length; i++) {
       const p = this.pos[i]!;
@@ -191,6 +238,10 @@ export class Ragdoll {
     for (let iter = 0; iter < 6; iter++) {
       for (const s of this.sticks) this.solve(s.a, s.b, s.len, false);
       for (const s of this.mins) this.solve(s.a, s.b, s.len, true);
+      for (const m of this.muscles) {
+        const k = 1 - this.age / m.relax;
+        if (k > 0) this.solve(m.a, m.b, m.len, false, k * 0.35);
+      }
       this.hinges();
       for (let i = 0; i < this.pos.length; i++) this.collide(i, world);
     }
@@ -208,7 +259,7 @@ export class Ragdoll {
     if (this.still > 0.8) this.asleep = true;
   }
 
-  private solve(a: number, b: number, len: number, minOnly: boolean): void {
+  private solve(a: number, b: number, len: number, minOnly: boolean, strength = 1): void {
     const p = this.pos[a]!;
     const q = this.pos[b]!;
     const dx = q.x - p.x;
@@ -219,7 +270,7 @@ export class Ragdoll {
     // The lighter point moves more.
     const wa = this.inv[a]!;
     const wb = this.inv[b]!;
-    const diff = (d - len) / d / (wa + wb);
+    const diff = ((d - len) / d / (wa + wb)) * strength;
     p.x += dx * diff * wa;
     p.y += dy * diff * wa;
     p.z += dz * diff * wa;

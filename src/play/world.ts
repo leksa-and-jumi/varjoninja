@@ -674,12 +674,13 @@ export class World {
     if (ko) {
       // Knocked out: fly like a rag doll, a little differently every time.
       const len = Math.hypot(dx, dz) || 1;
+      // A real hit knocks you over rather than sending you flying (finishing moves still do).
       const vel = throwVel ?? {
-        x: (dx / len) * force * 1.1,
-        y: 3 + force * 0.45,
-        z: (dz / len) * force * 1.1,
+        x: (dx / len) * (1.5 + force * 0.45),
+        y: 0.8 + force * 0.12,
+        z: (dz / len) * (1.5 + force * 0.45),
       };
-      this.startRagdoll(p, vel, this.rng.range(3, 8));
+      this.startRagdoll(p, vel, throwVel ? this.rng.range(3, 8) : this.rng.range(0.8, 2.5));
     }
     this.fx.sparks(p.x, p.y + 1.2, p.z);
     if (innocent) {
