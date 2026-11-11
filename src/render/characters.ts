@@ -233,13 +233,15 @@ bool suitPart = isSuit(cRegion);
     vec2 q = vec2((p.x + p.z) * 18.0, p.y * 22.0);
     q.x += mod(floor(q.y), 2.0) * 0.5;
     vec2 f = fract(q) - vec2(0.5, 0.0);
-    float edge = smoothstep(0.4, 0.5, length(f));
+    // Thin golden rims around red scales.
+    float edge = 1.0 - smoothstep(0.0, 0.07, abs(length(f) - 0.45));
     diffuseColor.rgb = mix(diffuseColor.rgb, uPatternColor, edge * 0.9);
-    suitGlow += uPatternColor * edge * 0.2 * glow;
+    suitGlow += uPatternColor * edge * 0.35 * glow;
   } else if (suitPart && pattern == 4) {
     float band = smoothstep(0.8, 1.0, sin(p.y * 7.0 - uTime * 2.5 + sin(p.x * 6.0) * 0.6));
     diffuseColor.rgb = mix(diffuseColor.rgb, uPatternColor, band * 0.6);
-    suitGlow += uPatternColor * band * 1.6 * glow + diffuseColor.rgb * 0.06;
+    // The whole suit glows softly golden, with bright light running up it.
+    suitGlow += uPatternColor * band * 1.8 * glow + diffuseColor.rgb * 0.35 * glow;
   }
   // Glowing eyes and headband / belt on the fancy outfits.
   if (glow > 0.0 && cRegion == ${REGION.eyes}) suitGlow += uPatternColor * 2.5 * glow;
