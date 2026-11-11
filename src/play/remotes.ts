@@ -53,10 +53,17 @@ export class Remotes {
     const existing = this.players.get(id);
     if (existing) {
       existing.colors = colors;
-      existing.view.setColors({ suit: colors[0], accent: colors[1], mask: colors[2] });
+      existing.view.setColors(
+        { suit: colors[0], accent: colors[1], mask: colors[2] },
+        colors[3] ?? null,
+      );
       return;
     }
-    const view = new NinjaView(this.scene, { suit: colors[0], accent: colors[1], mask: colors[2] });
+    const view = new NinjaView(
+      this.scene,
+      { suit: colors[0], accent: colors[1], mask: colors[2] },
+      colors[3] ?? null,
+    );
     view.setVisible(false);
     this.players.set(id, {
       id,
@@ -96,6 +103,11 @@ export class Remotes {
   }
 
   /** Positions for the map. */
+  /** A friend's headband colour (their chat dot). */
+  colorOf(id: number): string {
+    return this.players.get(id)?.colors[1] ?? '#ffffff';
+  }
+
   get positions(): { x: number; z: number; color: string }[] {
     return [...this.players.values()]
       .filter((r) => r.snaps.length)

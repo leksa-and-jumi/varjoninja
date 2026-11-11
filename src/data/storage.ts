@@ -7,7 +7,13 @@ import type { NinjaColors } from '../render/characters';
 
 export interface Profile {
   colors: NinjaColors;
+  /** Hero points to spend in the outfit shop. */
   heroPoints: number;
+  /** All hero points ever earned (the rank). */
+  earned: number;
+  /** Bought outfits, and the one being worn (null = own colours). */
+  owned: string[];
+  outfit: string | null;
   collected: number[];
   solvedCount: number;
 }
@@ -41,12 +47,19 @@ function write(key: string, value: unknown): void {
 }
 
 export function loadProfile(): Profile {
-  return read<Profile>(STORAGE.profile, {
+  const p = read<Profile>(STORAGE.profile, {
     colors: DEFAULT_COLORS,
     heroPoints: 0,
+    earned: -1,
+    owned: [],
+    outfit: null,
     collected: [],
     solvedCount: 0,
   });
+  // Profiles from before the shop: everything earned so far counts for the rank.
+  if (p.earned < p.heroPoints) p.earned = p.heroPoints;
+  if (!Array.isArray(p.owned)) p.owned = [];
+  return p;
 }
 
 export function saveProfile(p: Profile): void {

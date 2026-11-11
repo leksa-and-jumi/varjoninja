@@ -52,6 +52,16 @@ describe('protocol', () => {
     });
   });
 
+  it('sends the outfit with the colours', () => {
+    const m = parseClient(
+      encodeClient({ t: 'hello', colors: ['#000000', '#ffffff', '#123456', 'legend'] }),
+    );
+    expect(m).toEqual({ t: 'hello', colors: ['#000000', '#ffffff', '#123456', 'legend'] });
+    expect(
+      parseClient(JSON.stringify(['h', ['#000000', '#ffffff', '#123456', 'hacker']])),
+    ).toBeNull();
+  });
+
   it('rejects bad input', () => {
     expect(parseClient('nonsense')).toBeNull();
     expect(parseClient(JSON.stringify(['h', ['red', 'blue', 'x']]))).toBeNull();
@@ -80,5 +90,15 @@ describe('protocol', () => {
   it('makes valid room codes', () => {
     for (let i = 0; i < 50; i++) expect(isValidRoomCode(makeRoomCode())).toBe(true);
     expect(isValidRoomCode('hello')).toBe(false);
+  });
+});
+
+describe('chat', () => {
+  it('cleans and limits chat text', () => {
+    const m = parseClient(encodeClient({ t: 'chat', text: '  moi kaveri!\u0007 ' }));
+    expect(m).toEqual({ t: 'chat', text: 'moi kaveri!' });
+    expect(parseClient(JSON.stringify(['m', '   ']))).toBeNull();
+    const long = parseClient(JSON.stringify(['m', 'x'.repeat(200)]));
+    expect(long?.t === 'chat' && long.text.length).toBe(80);
   });
 });

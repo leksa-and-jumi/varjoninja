@@ -30,6 +30,18 @@ export interface Building {
   height: number;
   /** Low walls around the roof edges. */
   parapets: Box[];
+  hospital?: boolean;
+}
+
+/** A hospital: where ambulances park and where patients walk in and out. */
+export interface Hospital {
+  building: number;
+  /** Sidewalk spot in front of the doors. */
+  doorX: number;
+  doorZ: number;
+  /** Where the ambulance stops on the street (facing +X). */
+  stopX: number;
+  stopZ: number;
 }
 
 export type PropKind = 'ac' | 'waterTower' | 'antenna' | 'helipad' | 'billboard';
@@ -74,6 +86,7 @@ export interface City {
   benches: Placed[];
   trafficLights: Placed[];
   collectibles: Vec3[];
+  hospitals: Hospital[];
   grid: ColliderGrid;
 }
 
@@ -342,6 +355,9 @@ export function generateCity(seed: number = CITY.seed): City {
   // Parks and a plaza: fixed, recognisable places.
   const parks = new Set(['2,6', '3,6', '7,2', '6,7']);
   const plazas = new Set(['4,4', '5,5']);
+  // Two hospitals, on opposite sides of the city.
+  const hospitalBlocks = new Set(['1,7', '8,3']);
+  const hospitals: Hospital[] = [];
 
   for (let ix = 0; ix < n; ix++) {
     for (let iz = 0; iz < n; iz++) {
@@ -361,11 +377,52 @@ export function generateCity(seed: number = CITY.seed): City {
 
       if (kind === 'buildings') {
         const centrality = 1 - Math.max(Math.abs(cx), Math.abs(cz)) / CITY_HALF;
-        for (const lot of splitLots(rng, inner, district)) {
-          const b = makeBuilding(rng, buildings.length, lot, district, centrality);
-          buildings.push(b);
-          colliders.push(...b.boxes, ...b.parapets);
-          addRoofProps(rng, b, roofProps, colliders);
+        if (hospitalBlocks.has(key)) {
+          // Use up the random numbers as a normal block would, so the rest of the city
+          // stays exactly the same, then build the hospital instead.
+          for (const lot of splitLots(rng, inner, district)) {
+            const skip = makeBuilding(rng, -1, lot, district, centrality);
+            addRoofProps(rng, skip, [], []);
+          }
+          const inset = 3;
+          const hb = box(
+            inner.minX + inset,
+            0,
+            inner.minZ + inset,
+            inner.maxX - inset,
+            BUILDING.groundFloorHeight + BUILDING.floorHeight * 6,
+            inner.maxZ - inset,
+          );
+          const h: Building = {
+            id: buildings.length,
+            boxes: [hb],
+            facade: Facade.Modern,
+            tint: 0,
+            seed: 4242 + buildings.length,
+            district,
+            height: hb.maxY,
+            parapets: parapetsFor(hb),
+            hospital: true,
+          };
+          buildings.push(h);
+          colliders.push(...h.boxes, ...h.parapets);
+          const roofX = (hb.minX + hb.maxX) / 2;
+          const roofZ = (hb.minZ + hb.maxZ) / 2;
+          roofProps.push({ kind: 'helipad', x: roofX, y: hb.maxY, z: roofZ, rot: 0, size: 18 });
+          hospitals.push({
+            building: h.id,
+            doorX: roofX,
+            doorZ: hb.minZ - 1.5,
+            stopX: roofX,
+            stopZ: roadLine(iz) + CITY.laneWidth * 1.5,
+          });
+        } else {
+          for (const lot of splitLots(rng, inner, district)) {
+            const b = makeBuilding(rng, buildings.length, lot, district, centrality);
+            buildings.push(b);
+            colliders.push(...b.boxes, ...b.parapets);
+            addRoofProps(rng, b, roofProps, colliders);
+          }
         }
       } else if (kind === 'park') {
         const count = rng.int(26, 36);
@@ -468,6 +525,7 @@ export function generateCity(seed: number = CITY.seed): City {
     benches,
     trafficLights,
     collectibles,
+    hospitals,
     grid,
   };
 }

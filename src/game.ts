@@ -9,6 +9,9 @@ import { CameraRig } from './play/cameraRig';
 import { buildCityView, type CityView } from './render/cityRenderer';
 import { cityUniforms } from './render/materials';
 import { NinjaView } from './render/ninjaView';
+import { characterUniforms } from './render/characters';
+
+const AURA_COLOR = new THREE.Color(1, 0.85, 0.35);
 import { PostFx } from './render/postfx';
 import { SkyView } from './render/sky';
 import type { NinjaColors } from './render/characters';
@@ -85,6 +88,7 @@ export class Game {
     container: HTMLElement,
     colors: NinjaColors,
     readonly quality: Quality,
+    outfit: string | null = null,
   ) {
     this.renderer = new THREE.WebGLRenderer({
       antialias: false,
@@ -113,12 +117,13 @@ export class Game {
     this.input = new Input(this.renderer.domElement);
 
     this.player = new PlayerBody(this.city);
-    this.ninja = new NinjaView(this.scene, colors);
+    this.ninja = new NinjaView(this.scene, colors, outfit);
     this.fx = new Effects(this.scene);
     const cb: WorldCallbacks = {
       notify: (title, text, icon) => this.callbacks.notify(title, text, icon),
       reward: (points, text) => {
         this.world.heroPoints += points;
+        this.world.earned += points;
         this.callbacks.reward(points, text);
       },
       sound: (name, at) => this.callbacks.sound(name, at),
@@ -341,6 +346,20 @@ export class Game {
       dt,
     );
     this.ninja.setVisible(!this.world.driving);
+    characterUniforms.uTime.value = this.elapsed;
+    // The golden outfit glitters, and leaves a trail when moving fast.
+    if (this.ninja.outfit?.aura && !this.world.driving && this.state !== 'pause') {
+      const n = 1 + Math.floor(Math.min(4, p.speed / 8));
+      for (let k = 0; k < n; k++) {
+        if (Math.random() > 0.6) continue;
+        this.fx.mote(
+          p.pos.x + (Math.random() - 0.5) * 0.9,
+          p.pos.y + 0.2 + Math.random() * 1.6,
+          p.pos.z + (Math.random() - 0.5) * 0.9,
+          AURA_COLOR,
+        );
+      }
+    }
 
     this.finisherZoom +=
       ((this.world.finisher ? -2.2 : 0) - this.finisherZoom) * Math.min(1, realDt * 5);

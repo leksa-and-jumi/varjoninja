@@ -52,6 +52,10 @@ export interface Person {
   attackCooldown: number;
   /** Set when the person should be removed (after a puff of smoke). */
   gone: boolean;
+  /** Knocked out: when (world time) the ambulance should come. */
+  rescueAt?: number;
+  /** Removed without a puff of smoke (e.g. carried away by paramedics). */
+  quiet?: boolean;
 }
 
 const SIDEWALK_INSET = 2.4;

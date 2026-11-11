@@ -518,14 +518,17 @@ def build_car(kind):
         'police': dict(L=4.7, W=1.9, body=0.8, top=1.5, c0=-0.4, c1=0.95, ride=0.29, r=0.35),
         'van': dict(L=5.0, W=2.0, body=1.05, top=2.25, c0=-1.6, c1=1.85, ride=0.32, r=0.37),
         'sports': dict(L=4.4, W=1.94, body=0.62, top=1.18, c0=-0.2, c1=1.1, ride=0.2, r=0.34),
+        'ambulance': dict(L=5.8, W=2.1, body=1.0, top=2.3, c0=-2.1, c1=-1.0, ride=0.34, r=0.38),
     }[kind]
+    boxy = kind in ('van', 'ambulance')
+    white_body = kind in ('police', 'ambulance')
     L, W, ride, r = spec['L'], spec['W'], spec['ride'], spec['r']
     hl = L / 2
     hw = W / 2
     zb = ride
     zt = ride + spec['body']
     # Lower body: a hull with a sloped nose and tail (front is -Y).
-    nose = 0.25 if kind != 'van' else 0.08
+    nose = 0.25 if not boxy else 0.08
     lower = hull(
         [
             (sx * hw, sy * hl, z)
@@ -538,7 +541,7 @@ def build_car(kind):
         + [(sx * hw * 0.9, hl, zt - 0.18) for sx in (-1, 1)],
         'body',
     )
-    assign(lower, m['white'] if kind == 'police' else m['paint'])
+    assign(lower, m['white'] if white_body else m['paint'])
     bevel(lower, 0.1, 3)
     parts.append(lower)
     if kind == 'police':
@@ -552,7 +555,7 @@ def build_car(kind):
 
     # Cabin: glass hull with a painted roof on top.
     c0, c1, top = spec['c0'], spec['c1'], spec['top'] + ride - 0.28
-    slope = 0.45 if kind != 'van' else 0.15
+    slope = 0.45 if not boxy else 0.15
     cabin = hull(
         [(sx * hw * 0.94, c0 - slope, zt) for sx in (-1, 1)]
         + [(sx * hw * 0.94, c1 + slope * 0.6, zt) for sx in (-1, 1)]
@@ -567,9 +570,28 @@ def build_car(kind):
         [(sx * hw * 0.81, y, z) for sx in (-1, 1) for y in (c0 + 0.27, c1 - 0.17) for z in (top - 0.01, top + 0.05)],
         'roof',
     )
-    assign(roof, m['white'] if kind == 'police' else m['paint'])
+    assign(roof, m['white'] if white_body else m['paint'])
     bevel(roof, 0.03, 2)
     parts.append(roof)
+    if kind == 'ambulance':
+        # Ambulance: tall box behind the cab, red stripe and red crosses (paint is red).
+        y0, y1 = c1 + 0.15, hl - 0.05
+        zt2 = top + 0.45
+        box = box_obj('cargo', (W * 0.98, y1 - y0, zt2 - zt + 0.05), (0, (y0 + y1) / 2, (zt2 + zt) / 2), m['white'])
+        bevel(box, 0.06, 2)
+        parts.append(box)
+        for sx in (-1, 1):
+            parts.append(box_obj('stripe', (0.02, L - 0.3, 0.16), (sx * (hw - 0.0), 0.05, zt - 0.05), m['paint']))
+            cy = (y0 + y1) / 2
+            cz = (zt + zt2) / 2 + 0.15
+            parts.append(box_obj('cross', (0.02, 0.6, 0.18), (sx * (W * 0.49 + 0.01), cy, cz), m['paint']))
+            parts.append(box_obj('cross', (0.02, 0.18, 0.6), (sx * (W * 0.49 + 0.01), cy, cz), m['paint']))
+        parts.append(box_obj('cross', (0.5, 0.02, 0.16), (0, y1 + 0.005, zt2 - 0.45), m['paint']))
+        parts.append(box_obj('cross', (0.16, 0.02, 0.5), (0, y1 + 0.005, zt2 - 0.45), m['paint']))
+        parts.append(box_obj('siren_red', (0.5, 0.2, 0.14), (-0.3, c0 + 0.5, top + 0.1), m['siren_red']))
+        parts.append(box_obj('siren_blue', (0.5, 0.2, 0.14), (0.3, c0 + 0.5, top + 0.1), m['siren_blue']))
+        for sx in (-1, 1):
+            parts.append(box_obj('siren_red' if sx < 0 else 'siren_blue', (0.18, 0.18, 0.14), (sx * (hw - 0.15), y1 - 0.15, zt2 + 0.07), m['siren_red'] if sx < 0 else m['siren_blue']))
     if kind == 'van':
         # Van: the back is a closed box, not glass.
         box = box_obj('cargo', (W * 0.95, (c1 + 0.2) - (c0 + 1.1), top - zt + 0.05), (0, (c1 + 0.2 + c0 + 1.1) / 2, (top + zt) / 2), m['paint'])
@@ -610,6 +632,6 @@ def build_car(kind):
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     build_character()
-    for kind in ('sedan', 'taxi', 'police', 'van', 'sports'):
+    for kind in ('sedan', 'taxi', 'police', 'van', 'sports', 'ambulance'):
         build_car(kind)
     print('Models written to', os.path.abspath(OUT))

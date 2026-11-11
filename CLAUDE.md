@@ -14,8 +14,8 @@ Tämä repo kuuluu Julius (7 v) ja Leo (10 v) -veljesten pelistudioon (GitHub-or
 ## Turvallisuus (älä riko näitä)
 
 - Pelaaja on vain ninjan värit: **ei nimiä, ikää, kuvia tai muita henkilötietoja** peliin, laitteelle tai huonepalvelimelle.
-- **Ei chattia.** Moninpeliin pääsee vain koodilla (ei julkista huonelistaa). Ei mainoksia, seurantaa tai ostoja.
-- Väkivalta on sarjakuvamaista: ei verta. Tyrmätty ihminen makaa hetken tähdet pään ympärillä ja katoaa savupilveen. Sivullisen satuttamisesta tulee poliisitähtiä (sankari suojelee kaikkia). Julius toivoi, että tavallisia ihmisiä voi vahingoittaa; tämä on toteutettu näin lapsiystävällisesti.
+- **Chatti on päällä vanhemman päätöksellä (2026-11-10)**, vain saman huoneen kavereille: T avaa kentän, viestit näytetään `textContent`-tekstinä (ei HTML:ää), enintään 80 merkkiä, huonepalvelin rajoittaa (`LIMITS.chatRate/chatBurst`) eikä tallenna mitään. Moninpeliin pääsee vain koodilla (ei julkista huonelistaa). Ei mainoksia, seurantaa tai oikealla rahalla ostamista (pukukauppa käyttää vain sankaripisteitä).
+- Väkivalta pidetään maltillisena. **Vähän verta** on vanhemman luvalla (2026-11-10): muutama pisara tyrmäyksessä ja pieni läikkä maahan, joka häviää 3 minuutissa (`BLOOD`, `render/decals.ts`). Ei enempää ilman vanhemman lupaa. Tyrmätty makaa maassa, kunnes ambulanssi hakee hänet sairaalaan, josta hän kävelee ulos terveenä. Sivullisen satuttamisesta tulee poliisitähtiä (sankari suojelee kaikkia). Julius toivoi, että tavallisia ihmisiä voi vahingoittaa; tämä on toteutettu näin lapsiystävällisesti.
 - Huonepalvelin hyväksyy vain sallitut sivut (`ALLOWED_ORIGINS` tiedostossa `wrangler.jsonc`) ja tarkistaa jokaisen viestin (`src/logic/protocol.ts`).
 - Älä koskaan commitoi salaisuuksia: `.env.local` ja `.dev.vars` ovat gitignoressa. Avaimia ei tulosteta.
 
@@ -43,6 +43,12 @@ Tämä repo kuuluu Julius (7 v) ja Leo (10 v) -veljesten pelistudioon (GitHub-or
 - **Autokamera** (`CameraRig.updateCar`, vakiot `CAR_CAMERA`): pysyy auton takana, katsoo nopeuden mukaan eteenpäin, palaa taakse kun hiirellä ei ole katsottu hetkeen. `C` vaihtaa lähi-/kaukokuvan.
 - **Päivä ja yö** tulevat kellosta (`timeOfDay`, vuorokausi 16 min), moninpelissä palvelimen kellosta.
 
+## Ambulanssit, sairaalat ja pukukauppa
+
+- **Sairaalat** (`city.hospitals`): kaksi kiinteää korttelia (`1,7` ja `8,3`). Korttelin satunnaisluvut kulutetaan kuten tavallisessa korttelissa, joten muu kaupunki pysyy samana. Seinissä on punaiset ristit, oven yllä kyltti ja katos, katolla helikopterikenttä.
+- **Ambulanssit** (`src/play/ambulances.ts`, vakiot `AMBULANCE`): tyrmätylle arvotaan `rescueAt` 60–120 s päähän. Ambulanssi (Blender-malli `car_ambulance.glb`) ilmestyy noin 130 m päähän, ajaa katuverkkoa pitkin (`src/logic/route.ts`), kaksi ensihoitajaa kantaa paareilla, ja auto vie potilaat lähimpään sairaalaan. 50 s myöhemmin potilas kävelee ovesta ulos (vain jos ninja on lähellä). Kaikki on paikallista, verkkoviestejä ei ole.
+- **Pukukauppa** (`src/logic/outfits.ts`): Tiikeriasu 200, Salamapuku 500, Lohikäärmehaarniska 800, Kultainen legenda 1000. Kuviot, hehku ja metallisuus tehdään hahmoshaderissa (`SUIT_STYLE`), Kultaisella legendalla on lisäksi kimallus ninjan ympärillä. Profiilissa on `heroPoints` (käytettävissä), `earned` (sankariarvo, ei laske ostaessa), `owned` ja `outfit`. Puku kulkee kavereille värien neljäntenä alkiona (`NetColors`). `OUTFITS`-listaan lisätään vain loppuun.
+
 ## Grafiikan laatu
 
 - `QUALITY` (game.ts): _Kevyt_ ilman varjoja, _Keski_ 2048-varjokartta, _Hieno_ 4096-varjokartta (140 m alue) + GTAO-kulmavarjostus puolella tarkkuudella. Varjokamera napsahtaa tekseleihin (ei välkettä).
@@ -52,7 +58,6 @@ Tämä repo kuuluu Julius (7 v) ja Leo (10 v) -veljesten pelistudioon (GitHub-or
 
 - Taukovalikon **Kutsu kaveri** avaa paneelin, jossa on huoneen koodi ja linkki `…/varjoninja/?huone=KOODI` (kopioi-nappi). Yksin pelatessa nappi luo ensin uuden huoneen.
 - Kun peli avataan kutsulinkillä, alkuvalikossa näkyy "Kaveri kutsui sinut peliin!" ja nappi, jolla pääsee suoraan samaan huoneeseen.
-- **Chattia ja verta ei ole.** Julius toivoi molempia (2026-11-10); ne lisätään vain, jos vanhempi erikseen sallii.
 
 ## Cloudflare-kiintiö (tärkeä)
 

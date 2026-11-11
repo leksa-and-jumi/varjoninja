@@ -3,6 +3,7 @@
 import type { NinjaColors } from '../render/characters';
 import type { Settings } from '../data/storage';
 import { getLang, LANGS, t, type Lang } from '../i18n';
+import { OUTFITS, type OutfitId } from '../logic/outfits';
 
 export const SUIT_COLORS = [
   '#1b1c22',
@@ -43,6 +44,12 @@ export interface MenuActions {
   language(l: Lang): void;
   /** Open the invite panel (starts a room first if playing alone). */
   invite(): void;
+  /** Outfit shop: current points, owned outfits and the one being worn. */
+  shopState(): { points: number; owned: string[]; outfit: string | null };
+  /** Buy an outfit (returns false if not possible). */
+  buy(id: OutfitId): boolean;
+  /** Wear an outfit (null = own colours). */
+  wear(id: OutfitId | null): void;
 }
 
 function html(parent: HTMLElement, cls: string, inner: string): HTMLDivElement {
@@ -83,6 +90,7 @@ export class Menus {
       if (a === 'joinInvite' && this.invitedCode) actions.join(this.invitedCode);
       if (a === 'host') actions.host();
       if (a === 'outfit') this.showOutfit();
+      if (a === 'shop') this.showShop('title');
       if (a === 'settings') this.showSettings('title');
       if (b.dataset['lang']) this.setLanguage(b.dataset['lang'] as Lang);
     });
@@ -104,10 +112,12 @@ export class Menus {
       if (a === 'quit') actions.quit();
       if (a === 'invite') actions.invite();
       if (a === 'outfit') this.showOutfit('pause');
+      if (a === 'shop') this.showShop('pause');
       if (a === 'settings') this.showSettings('pause');
     });
     this.settingsPanel = html(parent, 'screen settings hidden', '');
     this.invitePanel = html(parent, 'screen invite hidden', '');
+    this.shopPanel = html(parent, 'screen outfit shop hidden', '');
     this.ko = html(parent, 'screen ko hidden', '');
     this.renderTexts();
   }
@@ -131,8 +141,9 @@ export class Menus {
           <form class="join"><input maxlength="32" placeholder="${t('joinPlaceholder')}" autocomplete="off" spellcheck="false" /><button type="submit">${t('join')}</button></form>
           <div class="row">
             <button data-a="outfit">${t('outfitButton')}</button>
-            <button data-a="settings">${t('settingsButton')}</button>
+            <button data-a="shop">${t('shop')}</button>
           </div>
+          <button data-a="settings">${t('settingsButton')}</button>
           <div class="langs" aria-label="${t('language')}">${LANGS.map(
             (l) =>
               `<button class="lang ${l.id === lang ? 'on' : ''}" data-lang="${l.id}">${l.flag} ${l.label}</button>`,
@@ -146,6 +157,7 @@ export class Menus {
         <button class="big" data-a="resume">${t('resume')}</button>
         <button data-a="invite">${t('invite')}</button>
         <button data-a="outfit">${t('outfitButton')}</button>
+        <button data-a="shop">${t('shop')}</button>
         <button data-a="settings">${t('settingsButton')}</button>
         <button data-a="quit">${t('quit')}</button>
       </div>`;
@@ -162,6 +174,61 @@ export class Menus {
 
   private back: 'title' | 'pause' = 'title';
   private invitePanel: HTMLDivElement;
+  private shopPanel: HTMLDivElement;
+
+  /** The outfit shop: four special suits for hero points, plus your own colours. */
+  private showShop(from: 'title' | 'pause'): void {
+    this.back = from;
+    this.title.classList.add('hidden');
+    this.pause.classList.add('hidden');
+    if (this.shopPanel.classList.contains('hidden')) this.actions.outfit(true);
+    const st = this.actions.shopState();
+    const card = (o: (typeof OUTFITS)[number]) => {
+      const owned = st.owned.includes(o.id);
+      const worn = st.outfit === o.id;
+      const button = worn
+        ? `<button class="on" disabled>${t('wearing')}</button>`
+        : owned
+          ? `<button data-wear="${o.id}">${t('wear')}</button>`
+          : st.points >= o.price
+            ? `<button class="big" data-buy="${o.id}">${t('buy', { price: `⭐ ${o.price}` })}</button>`
+            : `<button disabled>${t('needMore', { n: o.price - st.points })}</button>`;
+      const swatch = `background: linear-gradient(135deg, ${o.suit} 0%, ${o.suit} 45%, ${o.patternColor} 50%, ${o.suit} 55%, ${o.accent} 100%)`;
+      return `<div class="shop-item ${o.id}"><div class="shop-swatch" style="${swatch}"></div><div class="shop-info"><b>${t(o.nameKey)}</b><span>⭐ ${o.price}</span></div>${button}</div>`;
+    };
+    const ownWorn = st.outfit === null;
+    this.shopPanel.innerHTML = `<div class="panel side">
+      <h2>${t('shop')}</h2>
+      <p class="shop-points">${t('shopPoints', { n: st.points })}</p>
+      <div class="shop-item"><div class="shop-swatch own"></div><div class="shop-info"><b>${t('ownColors')}</b></div>${
+        ownWorn
+          ? `<button class="on" disabled>${t('wearing')}</button>`
+          : `<button data-wear="">${t('wear')}</button>`
+      }</div>
+      ${OUTFITS.map(card).join('')}
+      <button class="big" data-a="done">${t('done')}</button>
+    </div>`;
+    this.shopPanel.classList.remove('hidden');
+    this.shopPanel.onclick = (e) => {
+      const b = (e.target as HTMLElement).closest('button');
+      if (!b || b.disabled) return;
+      this.actions.click();
+      if (b.dataset['a'] === 'done') {
+        this.shopPanel.classList.add('hidden');
+        this.actions.outfit(false);
+        if (this.back === 'title') this.title.classList.remove('hidden');
+        else this.pause.classList.remove('hidden');
+        return;
+      }
+      if (b.dataset['buy']) {
+        const id = b.dataset['buy'] as OutfitId;
+        if (this.actions.buy(id)) this.actions.wear(id);
+      } else if (b.dataset['wear'] !== undefined) {
+        this.actions.wear((b.dataset['wear'] || null) as OutfitId | null);
+      }
+      this.showShop(from);
+    };
+  }
   /** Room code from an invite link (?huone=…). */
   private invitedCode: string | null = null;
 
@@ -195,6 +262,7 @@ export class Menus {
       }
       if (b.dataset['a'] === 'done') {
         this.invitePanel.classList.add('hidden');
+        this.shopPanel.classList.add('hidden');
         this.pause.classList.remove('hidden');
       }
     };

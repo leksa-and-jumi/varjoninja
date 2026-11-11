@@ -53,7 +53,21 @@ export interface Look {
   /** Body proportions. */
   scale: number;
   width: number;
+  /** Special outfit look (patterns, glow, metal). */
+  style?: SuitStyle;
 }
+
+export interface SuitStyle {
+  pattern: number;
+  patternColor: THREE.Color;
+  glow: number;
+  metal: number;
+}
+
+const NO_STYLE: SuitStyle = { pattern: 0, patternColor: new THREE.Color(0), glow: 0, metal: 0 };
+
+/** Shared by every character material: time for animated patterns. */
+export const characterUniforms = { uTime: { value: 0 } };
 
 export interface NinjaColors {
   suit: string;
@@ -63,7 +77,7 @@ export interface NinjaColors {
 
 export const SKIN_TONES = ['#f1c7a6', '#e0ac85', '#c68863', '#9a6544', '#6e4430', '#f5d5bd'];
 
-export function ninjaLook(c: NinjaColors, skin = SKIN_TONES[1]!): Look {
+export function ninjaLook(c: NinjaColors, skin = SKIN_TONES[1]!, style?: SuitStyle): Look {
   const suit = new THREE.Color(c.suit);
   const accent = new THREE.Color(c.accent);
   const mask = new THREE.Color(c.mask);
@@ -85,7 +99,7 @@ export function ninjaLook(c: NinjaColors, skin = SKIN_TONES[1]!): Look {
   p[REGION.mouth] = mask.clone();
   p[REGION.brows] = new THREE.Color(0x1a1410);
   p[REGION.sole] = new THREE.Color(0x0b0b0d);
-  return { palette: p, accessories: ['headband', 'belt', 'sword'], scale: 1, width: 1 };
+  return { palette: p, accessories: ['headband', 'belt', 'sword'], scale: 1, width: 1, style };
 }
 
 const SHIRTS = [
@@ -188,11 +202,66 @@ int bodyRegion(vec3 p) {
 }
 `;
 
+/** Outfit patterns on the suit (tiger stripes, lightning, dragon scales, golden light). */
+const SUIT_STYLE = /* glsl */ `
+uniform vec4 uStyle; // pattern, glow, metal, -
+uniform vec3 uPatternColor;
+uniform float uTime;
+bool isSuit(int r) {
+  return r == ${REGION.top} || r == ${REGION.bottom} || r == ${REGION.forearm} || r == ${REGION.head} ||
+    r == ${REGION.neck} || r == ${REGION.nose} || r == ${REGION.ears} || r == ${REGION.mouth};
+}
+`;
+
+const SUIT_COLOR = /* glsl */ `
+vec3 suitGlow = vec3(0.0);
+bool suitPart = isSuit(cRegion);
+{
+  int pattern = int(uStyle.x + 0.5);
+  float glow = uStyle.y;
+  vec3 p = vRest;
+  if (suitPart && pattern == 1) {
+    float s = sin(p.y * 22.0 + sin(p.x * 14.0 + p.z * 9.0) * 2.2 + sin(p.x * 9.0 + p.z * 7.0));
+    diffuseColor.rgb = mix(diffuseColor.rgb, uPatternColor, smoothstep(0.5, 0.75, s));
+  } else if (suitPart && pattern == 2) {
+    float v = abs(sin(p.y * 16.0 + sin(p.x * 20.0) * 1.5 + sin(p.z * 17.0 + p.y * 5.0) * 1.2));
+    float vein = 1.0 - smoothstep(0.0, 0.09, v);
+    float pulse = 0.6 + 0.4 * sin(uTime * 6.0 + p.y * 10.0);
+    diffuseColor.rgb = mix(diffuseColor.rgb, uPatternColor, vein);
+    suitGlow += uPatternColor * vein * pulse * 2.5 * glow;
+  } else if (suitPart && pattern == 3) {
+    vec2 q = vec2((p.x + p.z) * 18.0, p.y * 22.0);
+    q.x += mod(floor(q.y), 2.0) * 0.5;
+    vec2 f = fract(q) - vec2(0.5, 0.0);
+    // Thin golden rims around red scales.
+    float edge = 1.0 - smoothstep(0.0, 0.07, abs(length(f) - 0.45));
+    diffuseColor.rgb = mix(diffuseColor.rgb, uPatternColor, edge * 0.9);
+    suitGlow += uPatternColor * edge * 0.35 * glow;
+  } else if (suitPart && pattern == 4) {
+    float band = smoothstep(0.8, 1.0, sin(p.y * 7.0 - uTime * 2.5 + sin(p.x * 6.0) * 0.6));
+    diffuseColor.rgb = mix(diffuseColor.rgb, uPatternColor, band * 0.6);
+    // The whole suit glows softly golden, with bright light running up it.
+    suitGlow += uPatternColor * band * 1.8 * glow + diffuseColor.rgb * 0.35 * glow;
+  }
+  // Glowing eyes and headband / belt on the fancy outfits.
+  if (glow > 0.0 && cRegion == ${REGION.eyes}) suitGlow += uPatternColor * 2.5 * glow;
+  if (glow > 0.0 && (cRegion == ${REGION.accent} || cRegion == ${REGION.belt})) suitGlow += diffuseColor.rgb * 0.7 * glow;
+}
+`;
+
 function paletteMaterial(look: Look): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0 });
-  const uniforms = { uPalette: { value: look.palette.map((c) => c.clone()) } };
+  const st = look.style ?? NO_STYLE;
+  const uniforms = {
+    uPalette: { value: look.palette.map((c) => c.clone()) },
+    uStyle: { value: new THREE.Vector4(st.pattern, st.glow, st.metal, 0) },
+    uPatternColor: { value: st.patternColor.clone() },
+  };
   m.onBeforeCompile = (shader) => {
     shader.uniforms['uPalette'] = uniforms.uPalette;
+    shader.uniforms['uStyle'] = uniforms.uStyle;
+    shader.uniforms['uPatternColor'] = uniforms.uPatternColor;
+    shader.uniforms['uTime'] = characterUniforms.uTime;
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -205,15 +274,24 @@ function paletteMaterial(look: Look): THREE.MeshStandardMaterial {
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        `#include <common>\nflat varying float vRegion;\nvarying vec3 vRest;\nuniform vec3 uPalette[${REGION_COUNT}];\n${BODY_REGIONS}`,
+        `#include <common>\nflat varying float vRegion;\nvarying vec3 vRest;\nuniform vec3 uPalette[${REGION_COUNT}];\n${BODY_REGIONS}\n${SUIT_STYLE}`,
       )
       .replace(
         '#include <color_fragment>',
-        `#include <color_fragment>\n{ int r = vRegion > 29.5 ? bodyRegion(vRest) : int(clamp(floor(vRegion), 0.0, ${REGION_COUNT - 1}.0)); diffuseColor.rgb *= uPalette[r]; }`,
+        `#include <color_fragment>\nint cRegion = vRegion > 29.5 ? bodyRegion(vRest) : int(clamp(floor(vRegion), 0.0, ${REGION_COUNT - 1}.0));\ndiffuseColor.rgb *= uPalette[cRegion];\n${SUIT_COLOR}`,
+      )
+      .replace(
+        '#include <metalnessmap_fragment>',
+        `#include <metalnessmap_fragment>\nif (suitPart && uStyle.z > 0.0) { metalnessFactor = uStyle.z; roughnessFactor = mix(roughnessFactor, 0.28, uStyle.z); }`,
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        '#include <emissivemap_fragment>\ntotalEmissiveRadiance += suitGlow;',
       );
   };
   m.customProgramCacheKey = () => 'palette-character';
   m.userData['palette'] = uniforms.uPalette;
+  m.userData['style'] = uniforms;
   return m;
 }
 
@@ -471,6 +549,13 @@ export class CharacterView {
   setLook(look: Look): void {
     const u = this.material.userData['palette'] as { value: THREE.Color[] };
     look.palette.forEach((c, i) => u.value[i]!.copy(c));
+    const s = this.material.userData['style'] as {
+      uStyle: { value: THREE.Vector4 };
+      uPatternColor: { value: THREE.Color };
+    };
+    const st = look.style ?? NO_STYLE;
+    s.uStyle.value.set(st.pattern, st.glow, st.metal, 0);
+    s.uPatternColor.value.copy(st.patternColor);
     for (const [name, obj] of this.accessories) obj.visible = look.accessories.includes(name);
     this.endRagdoll();
   }

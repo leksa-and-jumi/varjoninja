@@ -28,11 +28,14 @@ import { ATTACKS, Remotes } from './play/remotes';
 import { CAR_COLORS, CAR_MODELS, loadCarModels } from './render/carView';
 import { loadCharacterModel, type NinjaColors } from './render/characters';
 import { Hud } from './ui/hud';
+import { Chat } from './ui/chat';
+import { buyOutfit, outfitById } from './logic/outfits';
 import { setLang, t } from './i18n';
 import { Menus } from './ui/menus';
 import { isTouchDevice, TouchControls } from './ui/touch';
 
-const toNet = (c: NinjaColors): NetColors => [c.suit, c.accent, c.mask];
+const toNet = (c: NinjaColors, outfit: string | null): NetColors =>
+  outfit ? [c.suit, c.accent, c.mask, outfit] : [c.suit, c.accent, c.mask];
 
 async function main(): Promise<void> {
   const container = document.getElementById('game')!;
@@ -55,10 +58,35 @@ async function main(): Promise<void> {
       startPlaying(c);
     },
     colors: (c) => {
+      // Picking own colours takes the shop outfit off, so the change shows.
       profile.colors = c;
+      profile.outfit = null;
       saveProfile(profile);
-      game.ninja.setColors(c);
-      room?.setColors(toNet(c));
+      game.ninja.setColors(c, null);
+      room?.setColors(toNet(c, null));
+    },
+    shopState: () => ({
+      points: game.world.heroPoints,
+      owned: profile.owned,
+      outfit: profile.outfit,
+    }),
+    buy: (id) => {
+      const r = buyOutfit(id, game.world.heroPoints, profile.owned);
+      if (!r.ok) return false;
+      game.world.heroPoints = r.points;
+      profile.heroPoints = r.points;
+      profile.owned.push(id);
+      saveProfile(profile);
+      sounds.play('reward');
+      const o = outfitById(id)!;
+      hud.notify(t('bought', { name: t(o.nameKey) }), '', '👘');
+      return true;
+    },
+    wear: (id) => {
+      profile.outfit = id;
+      saveProfile(profile);
+      game.ninja.setColors(profile.colors, id);
+      room?.setColors(toNet(profile.colors, id));
     },
     settings: (s: Settings) => {
       settings = s;
@@ -98,9 +126,10 @@ async function main(): Promise<void> {
     loadCharacterModel(import.meta.env.BASE_URL),
     loadCarModels(import.meta.env.BASE_URL),
   ]);
-  const game = new Game(container, profile.colors, QUALITY[settings.quality]);
+  const game = new Game(container, profile.colors, QUALITY[settings.quality], profile.outfit);
   game.sensitivity = settings.sensitivity;
   game.world.heroPoints = profile.heroPoints;
+  game.world.earned = profile.earned;
   for (const i of profile.collected) game.world.collected.add(i);
 
   const hud = new Hud(ui, game.city);
@@ -109,6 +138,21 @@ async function main(): Promise<void> {
   game.input.touchMode = touch;
   hud.setHelp(settings.showHelp && !touch);
   const remotes = new Remotes(game.scene);
+  const chat = new Chat(ui);
+  chat.onSend = (text) => {
+    room?.chat(text);
+    chat.add(
+      text,
+      profile.outfit ? outfitById(profile.outfit)!.accent : profile.colors.accent,
+      true,
+    );
+  };
+  chat.onClose = () => {
+    game.input.enabled = true;
+    game.input.reset();
+    if (!touch && game.state === 'play')
+      void game.renderer.domElement.requestPointerLock?.()?.catch?.(() => {});
+  };
   let room: RoomClient | null = null;
   let clockOffset = 0;
 
@@ -123,6 +167,7 @@ async function main(): Promise<void> {
       hud.reward(points, text);
       sounds.play('reward');
       profile.heroPoints = game.world.heroPoints;
+      profile.earned = game.world.earned;
       profile.collected = [...game.world.collected];
       saveProfile(profile);
     },
@@ -171,7 +216,7 @@ async function main(): Promise<void> {
     room?.close();
     remotes.clear();
     game.world.roomSeed = roomSeed(code);
-    room = new RoomClient(code, toNet(profile.colors), {
+    room = new RoomClient(code, toNet(profile.colors, profile.outfit), {
       status: (s) => {
         if (s === 'open') hud.notify(t('connected'), t('tellCode', { code }), '👥');
         if (s === 'closed') hud.notify(t('disconnected'), t('retrying'), '📡');
@@ -202,6 +247,10 @@ async function main(): Promise<void> {
             break;
           case 'smoke':
             game.fx.puff(m.x, m.y + 0.3, m.z, 50, new THREE.Color(0.55, 0.55, 0.62), 6);
+            break;
+          case 'chat':
+            chat.add(m.text, remotes.colorOf(m.id), false);
+            sounds.play('ui');
             break;
         }
       },
@@ -261,7 +310,7 @@ async function main(): Promise<void> {
   }
 
   document.addEventListener('pointerlockchange', () => {
-    if (!document.pointerLockElement && game.state === 'play' && !touch) pause();
+    if (!document.pointerLockElement && game.state === 'play' && !touch && !chat.isOpen) pause();
   });
 
   // --- Every frame ---------------------------------------------------------------------------
@@ -311,6 +360,7 @@ async function main(): Promise<void> {
       );
     }
 
+    chat.setAvailable(game.state === 'play' && !!room && remotes.count > 0);
     if (game.state === 'play' || game.state === 'pause') {
       const nearCar =
         !w.driving &&
@@ -319,6 +369,7 @@ async function main(): Promise<void> {
       hud.update({
         hp: w.hp,
         heroPoints: w.heroPoints,
+        earned: w.earned,
         wanted: w.wanted,
         tod: timeOfDay(Date.now() + clockOffset, game.timeOffset),
         x: p.pos.x,
@@ -346,6 +397,21 @@ async function main(): Promise<void> {
   game.onSmoke = (x, y, z) => room?.smoke(x, y, z);
 
   window.addEventListener('keydown', (e) => {
+    // T or Enter opens the chat when a friend is in the room.
+    if (
+      (e.code === 'KeyT' || e.code === 'Enter') &&
+      game.state === 'play' &&
+      room &&
+      remotes.count > 0 &&
+      !chat.isOpen
+    ) {
+      e.preventDefault();
+      game.input.enabled = false;
+      game.input.reset();
+      chat.open();
+      if (document.pointerLockElement) void document.exitPointerLock();
+      return;
+    }
     if (e.code === 'KeyH' && game.state === 'play') {
       settings.showHelp = !settings.showHelp;
       saveSettings(settings);

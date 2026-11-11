@@ -5,8 +5,9 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MODEL_VERSION } from '../config';
 
-export type CarModel = 'sedan' | 'taxi' | 'police' | 'van' | 'sports';
-export const CAR_MODELS: CarModel[] = ['sedan', 'taxi', 'police', 'van', 'sports'];
+export type CarModel = 'sedan' | 'taxi' | 'police' | 'van' | 'sports' | 'ambulance';
+/** Append only: the index is sent between players. */
+export const CAR_MODELS: CarModel[] = ['sedan', 'taxi', 'police', 'van', 'sports', 'ambulance'];
 
 const templates = new Map<CarModel, THREE.Object3D>();
 
@@ -88,6 +89,7 @@ export class CarView {
     this.paint = new THREE.MeshStandardMaterial({ color, roughness: 0.28, metalness: 0.55 });
     if (model === 'taxi') this.paint.color.set('#f4c20d');
     if (model === 'police') this.paint.color.set('#1f3b73');
+    if (model === 'ambulance') this.paint.color.set('#d62828');
     this.root.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (mesh.isMesh) {

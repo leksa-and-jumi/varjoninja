@@ -42,6 +42,12 @@ Rikokset näkyvät kartalla ja punaisena valopylväänä. Ratkaisusta saa **sank
 
 Sankari ei satuta tavallisia ihmisiä: jos lyöt sivullista, **poliisi** lähtee perään (tähdet oikeassa yläkulmassa). Karkaa katoille tai heitä savupommi.
 
+### Ambulanssi, pukukauppa ja chatti
+
+- 🚑 Tyrmätyt jäävät maahan, kunnes ambulanssi hakee heidät sairaalaan. Hetken päästä he kävelevät sairaalasta ulos terveinä.
+- 👘 Sankaripisteillä voi ostaa pukuja: Tiikeriasu (200), Salamapuku (500), Lohikäärmehaarniska (800) ja Kultainen legenda (1000).
+- 💬 Kun kaveri on samassa pelissä, **T** avaa chatin.
+
 ### Kaverin kanssa
 
 Valitse **Pelaa kaverin kanssa**, niin peli antaa koodin (esim. `SALAMA-VARJO-98`). Kaveri kirjoittaa saman koodin omalla koneellaan. Näette toisenne ja ratkaisette samoja rikoksia. Pelissä ei ole nimiä eikä chattia.

@@ -2,12 +2,13 @@
 // No names or chat: a player is only a set of ninja colours.
 
 import { NET } from '../config';
+import { isOutfitId } from './outfits';
 
 export const MODES = ['ground', 'air', 'wall', 'swing', 'zip', 'swim', 'drive'] as const;
 export type NetMode = (typeof MODES)[number];
 
-/** Colours as three hex strings: suit, accent, mask. */
-export type NetColors = [string, string, string];
+/** Colours as three hex strings (suit, accent, mask), and the outfit id if one is worn. */
+export type NetColors = [string, string, string] | [string, string, string, string];
 
 export interface NetState {
   x: number;
@@ -33,7 +34,8 @@ export type ClientMessage =
   | { t: 'hello'; colors: NetColors }
   | { t: 'state'; s: NetState }
   | { t: 'solved'; crime: number }
-  | { t: 'smoke'; x: number; y: number; z: number };
+  | { t: 'smoke'; x: number; y: number; z: number }
+  | { t: 'chat'; text: string };
 
 export type ServerMessage =
   | { t: 'welcome'; id: number; time: number; players: [number, NetColors][]; solved: number[] }
@@ -42,6 +44,7 @@ export type ServerMessage =
   | { t: 'state'; id: number; s: NetState }
   | { t: 'solved'; crime: number; by: number }
   | { t: 'smoke'; id: number; x: number; y: number; z: number }
+  | { t: 'chat'; id: number; text: string }
   | { t: 'full' };
 
 const round = (v: number, k = 100) => Math.round(v * k) / k;
@@ -77,6 +80,8 @@ export function encodeClient(m: ClientMessage): string {
       return JSON.stringify(['c', m.crime]);
     case 'smoke':
       return JSON.stringify(['k', round(m.x, 10), round(m.y, 10), round(m.z, 10)]);
+    case 'chat':
+      return JSON.stringify(['m', m.text]);
   }
 }
 
@@ -94,6 +99,8 @@ export function encodeServer(m: ServerMessage): string {
       return JSON.stringify(['c', m.crime, m.by]);
     case 'smoke':
       return JSON.stringify(['k', m.id, m.x, m.y, m.z]);
+    case 'chat':
+      return JSON.stringify(['m', m.id, m.text]);
     case 'full':
       return JSON.stringify(['f']);
   }
@@ -142,8 +149,10 @@ function parseState(a: unknown[]): NetState | null {
 }
 
 function parseColors(v: unknown): NetColors | null {
-  if (!Array.isArray(v) || v.length !== 3 || !v.every(isColor)) return null;
-  return [v[0], v[1], v[2]] as NetColors;
+  if (!Array.isArray(v) || (v.length !== 3 && v.length !== 4)) return null;
+  if (!v.slice(0, 3).every(isColor)) return null;
+  if (v.length === 3) return [v[0], v[1], v[2]] as NetColors;
+  return isOutfitId(v[3]) ? ([v[0], v[1], v[2], v[3]] as NetColors) : null;
 }
 
 export function parseClient(raw: string): ClientMessage | null {
@@ -170,6 +179,10 @@ export function parseClient(raw: string): ClientMessage | null {
       return isNum(a[1], 5000) && isNum(a[2], 2000) && isNum(a[3], 5000)
         ? { t: 'smoke', x: a[1], y: a[2], z: a[3] }
         : null;
+    case 'm': {
+      const text = cleanChat(a[1]);
+      return text ? { t: 'chat', text } : null;
+    }
   }
   return null;
 }
@@ -216,10 +229,29 @@ export function parseServer(raw: string): ServerMessage | null {
       return isNum(a[1], 1e9) && isNum(a[2], 5000) && isNum(a[3], 2000) && isNum(a[4], 5000)
         ? { t: 'smoke', id: a[1], x: a[2], y: a[3], z: a[4] }
         : null;
+    case 'm': {
+      const text = cleanChat(a[2]);
+      return isNum(a[1], 1e9) && text ? { t: 'chat', id: a[1], text } : null;
+    }
     case 'f':
       return { t: 'full' };
   }
   return null;
+}
+
+// --- Chat -----------------------------------------------------------------------------------
+
+export const CHAT_MAX_LENGTH = 80;
+
+/** Chat text: no control characters, trimmed, at most CHAT_MAX_LENGTH characters. Null if empty. */
+export function cleanChat(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const text = [...v]
+    .filter((ch) => ch.charCodeAt(0) >= 32 && ch.charCodeAt(0) !== 127)
+    .join('')
+    .trim()
+    .slice(0, CHAT_MAX_LENGTH);
+  return text.length > 0 ? text : null;
 }
 
 // --- Room codes -------------------------------------------------------------------------------
@@ -278,4 +310,10 @@ export function roomSeed(code: string): number {
   return h >>> 0;
 }
 
-export const LIMITS = { maxPlayers: NET.maxPlayers, rate: NET.rateLimit, burst: NET.rateBurst };
+export const LIMITS = {
+  maxPlayers: NET.maxPlayers,
+  rate: NET.rateLimit,
+  burst: NET.rateBurst,
+  chatRate: 0.5,
+  chatBurst: 3,
+};
