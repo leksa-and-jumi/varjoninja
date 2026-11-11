@@ -32,8 +32,9 @@ export const REGION = {
   sole: 17,
   brows: 18,
   mouth: 19,
+  iris: 20,
 } as const;
-const REGION_COUNT = 20;
+const REGION_COUNT = 21;
 
 export type Accessory =
   'hairShort' | 'hairLong' | 'cap' | 'policeHat' | 'headband' | 'belt' | 'sword';
@@ -90,7 +91,8 @@ export function ninjaLook(c: NinjaColors, skin = SKIN_TONES[1]!, style?: SuitSty
   p[REGION.accent] = accent.clone();
   p[REGION.head] = mask.clone();
   p[REGION.neck] = mask.clone();
-  p[REGION.eyes] = new THREE.Color(0x101014);
+  p[REGION.eyes] = new THREE.Color(0x050506);
+  p[REGION.iris] = new THREE.Color(0x3b2618);
   p[REGION.hands] = new THREE.Color(0x1d1e22);
   // The mask covers nose, ears and mouth; only the eyes and brows show.
   p[REGION.eyeWhite] = new THREE.Color(0xf1efe9);
@@ -128,12 +130,16 @@ export function civilianLook(seed: number): Look {
   p[REGION.bottom] = pants;
   p[REGION.belt] = pants.clone().multiplyScalar(0.7);
   p[REGION.shoes] = new THREE.Color(rng.pick(['#222222', '#f2f2f2', '#6b3f22', '#33415c']));
-  p[REGION.eyes] = new THREE.Color(rng.pick(['#3b2618', '#2f4f6f', '#3d5a35', '#1b1410']));
+  // Pupil, and a coloured iris around it.
+  p[REGION.eyes] = new THREE.Color(0x050506);
+  p[REGION.iris] = new THREE.Color(
+    rng.pick(['#5a3a22', '#3b2618', '#3f6f9f', '#4f7a45', '#7a6a3a', '#2a1c12']),
+  );
   p[REGION.hair] = new THREE.Color(rng.pick(HAIR));
   p[REGION.eyeWhite] = new THREE.Color(0xf1efe9);
   p[REGION.brows] = p[REGION.hair]!.clone().multiplyScalar(0.8);
   p[REGION.mouth] = skin.clone().lerp(new THREE.Color(0x9c4a4a), 0.45);
-  p[REGION.nose] = skin.clone().multiplyScalar(0.97);
+  p[REGION.nose] = skin.clone();
   p[REGION.sole] = new THREE.Color(0x1a1a1a);
   p[REGION.hat] = new THREE.Color(rng.pick(SHIRTS));
   p[REGION.accent] = p[REGION.hat]!.clone().multiplyScalar(0.7);
@@ -244,7 +250,7 @@ bool suitPart = isSuit(cRegion);
     suitGlow += uPatternColor * band * 1.8 * glow + diffuseColor.rgb * 0.35 * glow;
   }
   // Glowing eyes and headband / belt on the fancy outfits.
-  if (glow > 0.0 && cRegion == ${REGION.eyes}) suitGlow += uPatternColor * 2.5 * glow;
+  if (glow > 0.0 && (cRegion == ${REGION.eyes} || cRegion == ${REGION.iris})) suitGlow += uPatternColor * 2.5 * glow;
   if (glow > 0.0 && (cRegion == ${REGION.accent} || cRegion == ${REGION.belt})) suitGlow += diffuseColor.rgb * 0.7 * glow;
 }
 `;
