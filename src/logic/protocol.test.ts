@@ -5,6 +5,7 @@ import {
   isValidRoomCode,
   makeRoomCode,
   normalizeRoomCode,
+  parseRoomCode,
   parseClient,
   parseServer,
   type NetState,
@@ -79,6 +80,14 @@ describe('protocol', () => {
       expect(code.length).toBeLessThanOrEqual(32);
       expect(normalizeRoomCode(code)).toBe(code);
     }
+  });
+
+  it('understands codes typed without dashes', () => {
+    expect(parseRoomCode('kissavarjo12')).toBe('KISSA-VARJO-12');
+    expect(parseRoomCode('KISSA VARJO 12')).toBe('KISSA-VARJO-12');
+    expect(parseRoomCode('tähtikoysi42')).toBe('TAHTI-KOYSI-42');
+    expect(parseRoomCode('hello')).toBeNull();
+    expect(parseRoomCode('')).toBeNull();
   });
 
   it('cleans up typed codes', () => {

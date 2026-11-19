@@ -40,6 +40,12 @@ const KEYS: Record<string, Action> = {
   KeyP: 'pause',
 };
 
+/** Is the key going into a text field? */
+export function isTyping(e: KeyboardEvent): boolean {
+  const t = e.target as HTMLElement | null;
+  return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+}
+
 export class Input {
   readonly held = new Set<Action>();
   private pressedNow = new Set<Action>();
@@ -57,7 +63,8 @@ export class Input {
   constructor(private readonly canvas: HTMLCanvasElement) {
     window.addEventListener('keydown', (e) => {
       const a = KEYS[e.code];
-      if (!a || !this.enabled) return;
+      // Typing in a text box (a friend's code, chat): the keys belong to the box, not the ninja.
+      if (!a || !this.enabled || isTyping(e)) return;
       if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
       if (!this.held.has(a)) this.pressedNow.add(a);
       this.held.add(a);

@@ -98,8 +98,8 @@ export class Menus {
     this.title.addEventListener('submit', (e) => {
       e.preventDefault();
       const input = this.title.querySelector('input')!;
-      const code = input.value.trim().toUpperCase();
-      if (code) actions.join(code);
+      // Even an empty box gets an answer (a message), so the button never seems dead.
+      actions.join(input.value.trim().toUpperCase());
     });
 
     this.outfit = html(parent, 'screen outfit hidden', '');
@@ -392,9 +392,18 @@ export class Menus {
     };
   }
 
+  /** Show a clear message under the code box (the code stays there so it can be fixed). */
   setJoinError(text: string): void {
-    const input = this.title.querySelector('input')!;
-    input.value = '';
-    input.placeholder = text;
+    let msg = this.title.querySelector<HTMLDivElement>('.join-error');
+    if (!msg) {
+      msg = document.createElement('div');
+      msg.className = 'join-error';
+      this.title.querySelector('form')!.after(msg);
+    }
+    msg.textContent = text;
+    const form = this.title.querySelector('form')!;
+    form.classList.remove('shake');
+    void form.offsetWidth;
+    form.classList.add('shake');
   }
 }

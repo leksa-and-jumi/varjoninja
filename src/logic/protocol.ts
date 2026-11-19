@@ -296,6 +296,24 @@ export function normalizeRoomCode(code: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+/**
+ * Turn whatever was typed into a room code: also works without dashes or spaces
+ * ("kissavarjo12" → "KISSA-VARJO-12") by finding the two code words.
+ */
+export function parseRoomCode(typed: string): string | null {
+  const code = normalizeRoomCode(typed);
+  if (isValidRoomCode(code)) return code;
+  const m = /^([A-Z]+)(\d{2})$/.exec(code.replace(/-/g, ''));
+  if (!m) return null;
+  const letters = m[1]!;
+  for (const a of WORDS) {
+    if (!letters.startsWith(a)) continue;
+    const b = letters.slice(a.length);
+    if (WORDS.includes(b)) return `${a}-${b}-${m[2]}`;
+  }
+  return null;
+}
+
 export function isValidRoomCode(code: string): boolean {
   return /^[A-ZÄÖ]{2,10}-[A-ZÄÖ]{2,10}-\d{2}$/.test(code);
 }
