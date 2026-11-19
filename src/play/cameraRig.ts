@@ -13,6 +13,8 @@ export interface CarTarget {
   yaw: number;
   /** Signed speed along the car (negative = reversing). */
   forwardSpeed: number;
+  /** Half the vehicle's length: long buses get a camera further back, mopeds a closer one. */
+  half?: number;
 }
 
 export class CameraRig {
@@ -89,7 +91,7 @@ export class CameraRig {
     const ahead = clamp(car.forwardSpeed * CAR_CAMERA.lookAhead, -2, CAR_CAMERA.maxLookAhead);
     const target = new THREE.Vector3(
       car.x + fx * ahead,
-      car.y + CAR_CAMERA.height,
+      car.y + CAR_CAMERA.height + clamp(((car.half ?? 2.3) - 2.3) * 0.35, -0.3, 1.4),
       car.z + fz * ahead,
     );
     if (!this.inCar) {
@@ -114,7 +116,8 @@ export class CameraRig {
     this.carPitch = clamp(this.pitch, -0.1, 0.9);
 
     const base = CAR_CAMERA.distances[this.carView] ?? CAR_CAMERA.distances[0];
-    const wanted = base + Math.min(4, speed * 0.08);
+    const size = clamp(((car.half ?? 2.3) - 2.3) * 1.1, -2, 5);
+    const wanted = base + size + Math.min(4, speed * 0.08);
     const dir = new THREE.Vector3(
       Math.sin(this.yaw) * Math.cos(this.carPitch),
       Math.sin(this.carPitch),

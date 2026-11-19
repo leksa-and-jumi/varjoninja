@@ -3,11 +3,42 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { MODEL_VERSION } from '../config';
+import { MODEL_VERSION, vehicleSpec } from '../config';
 
-export type CarModel = 'sedan' | 'taxi' | 'police' | 'van' | 'sports' | 'ambulance';
+export type CarModel =
+  | 'sedan'
+  | 'taxi'
+  | 'police'
+  | 'van'
+  | 'sports'
+  | 'ambulance'
+  | 'suv'
+  | 'pickup'
+  | 'bus'
+  | 'mini'
+  | 'moped';
 /** Append only: the index is sent between players. */
-export const CAR_MODELS: CarModel[] = ['sedan', 'taxi', 'police', 'van', 'sports', 'ambulance'];
+export const CAR_MODELS: CarModel[] = [
+  'sedan',
+  'taxi',
+  'police',
+  'van',
+  'sports',
+  'ambulance',
+  'suv',
+  'pickup',
+  'bus',
+  'mini',
+  'moped',
+];
+
+/** Where the rider sits on a moped: behind the centre (metres, model space +Z is forward). */
+export const MOPED_SEAT_BACK = 0.3;
+
+const X_AXIS = new THREE.Vector3(1, 0, 0);
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const spinQ = new THREE.Quaternion();
+const steerQ = new THREE.Quaternion();
 
 const templates = new Map<CarModel, THREE.Object3D>();
 
@@ -75,8 +106,19 @@ export function updateCarLights(night: number, time: number, sirenOn: boolean): 
 export class CarView {
   readonly root: THREE.Object3D;
   private wheels: THREE.Object3D[] = [];
-  private frontWheels: THREE.Object3D[] = [];
+  private frontWheels = new Set<THREE.Object3D>();
+  /** Each wheel's rest rotation from the model (its axle points sideways). */
+  private wheelRest = new Map<THREE.Object3D, THREE.Quaternion>();
   private spin = 0;
+  private wheelRadius = 0.35;
+  private lastYaw: number | null = null;
+  /** Sideways lean into turns (two-wheelers), radians; positive leans right. */
+  lean = 0;
+  /** A kicked moped lies on its side. */
+  fallen = false;
+  readonly twoWheeler: boolean;
+  /** A rider sits here (child of the root), for mopeds. */
+  readonly seat = new THREE.Object3D();
   readonly paint: THREE.MeshStandardMaterial;
 
   constructor(
@@ -87,6 +129,10 @@ export class CarView {
     if (!t) throw new Error(`car model ${model} not loaded`);
     this.root = t.clone(true);
     this.paint = new THREE.MeshStandardMaterial({ color, roughness: 0.28, metalness: 0.55 });
+    this.twoWheeler = vehicleSpec(model).twoWheeler;
+    this.wheelRadius = model === 'moped' ? 0.24 : model === 'bus' ? 0.5 : 0.36;
+    this.seat.position.set(0, 0, -MOPED_SEAT_BACK);
+    this.root.add(this.seat);
     if (model === 'taxi') this.paint.color.set('#f4c20d');
     if (model === 'police') this.paint.color.set('#1f3b73');
     if (model === 'ambulance') this.paint.color.set('#d62828');
@@ -104,7 +150,9 @@ export class CarView {
       }
       if (o.name.startsWith('wheel_')) {
         this.wheels.push(o);
-        if (o.name.endsWith('fl') || o.name.endsWith('fr')) this.frontWheels.push(o);
+        this.wheelRest.set(o, o.quaternion.clone());
+        if (o.name.endsWith('fl') || o.name.endsWith('fr') || o.name === 'wheel_f')
+          this.frontWheels.add(o);
       }
     });
   }
@@ -122,15 +170,27 @@ export class CarView {
     this.root.position.set(x, y, z);
     // The model's front (Blender -Y) is +Z after export, the same as yaw 0.
     this.root.rotation.y = yaw;
-    this.spin += (speed * dt) / 0.35;
-    for (const w of this.wheels) {
-      w.rotation.set(0, 0, 0);
-      w.rotateX(this.spin);
+    if (this.twoWheeler) {
+      // Lean into turns like a real scooter: tan(lean) = speed · turn rate / g.
+      let rate = 0;
+      if (this.lastYaw !== null && dt > 0) {
+        const d = ((yaw - this.lastYaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+        rate = d / dt;
+      }
+      const want = this.fallen
+        ? 1.35
+        : Math.max(-0.55, Math.min(0.55, Math.atan((-speed * rate) / 9.8)));
+      this.lean += (want - this.lean) * Math.min(1, dt * 6);
+      this.root.rotation.z = this.lean;
     }
-    for (const w of this.frontWheels) {
-      w.rotation.set(0, 0, 0);
-      w.rotateY(-steer);
-      w.rotateX(this.spin);
+    this.lastYaw = yaw;
+    this.spin += (speed * dt) / this.wheelRadius;
+    // Spin around the axle (the car's sideways X axis), then steer the front wheels.
+    spinQ.setFromAxisAngle(X_AXIS, this.spin);
+    steerQ.setFromAxisAngle(Y_AXIS, -steer);
+    for (const w of this.wheels) {
+      w.quaternion.copy(this.wheelRest.get(w)!).premultiply(spinQ);
+      if (this.frontWheels.has(w)) w.quaternion.premultiply(steerQ);
     }
   }
 

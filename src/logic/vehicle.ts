@@ -1,6 +1,6 @@
 // A car the ninja drives: simple arcade physics with drifting and bumping into buildings.
 
-import { CAR } from '../config';
+import { CAR, vehicleSpec, type VehicleSpec } from '../config';
 import { groundHeight, isInSea, type City } from './city';
 import { clamp } from './geom';
 
@@ -9,9 +9,6 @@ export interface DriveInput {
   steer: number; // -1..1 (positive = right)
   handbrake: boolean;
 }
-
-const WHEELBASE = 2.8;
-const BODY_RADIUS = 1.05;
 
 export class DrivenCar {
   x = 0;
@@ -25,7 +22,14 @@ export class DrivenCar {
   lastImpact = 0;
   sunk = false;
 
-  constructor(private readonly city: City) {}
+  readonly spec: VehicleSpec;
+
+  constructor(
+    private readonly city: City,
+    model = 'sedan',
+  ) {
+    this.spec = vehicleSpec(model);
+  }
 
   get forwardSpeed(): number {
     return this.vx * Math.sin(this.yaw) + this.vz * Math.cos(this.yaw);
@@ -61,21 +65,22 @@ export class DrivenCar {
     let side = this.vx * rx + this.vz * rz;
 
     // Engine and brakes.
+    const spec = this.spec;
     if (input.throttle > 0) {
-      fwd += input.throttle * CAR.accel * dt * (fwd < 0 ? 2 : 1);
+      fwd += input.throttle * spec.accel * dt * (fwd < 0 ? 2 : 1);
     } else if (input.throttle < 0) {
       if (fwd > 0.5) fwd += input.throttle * CAR.brake * dt;
-      else fwd = Math.max(-CAR.reverseSpeed, fwd + input.throttle * CAR.accel * 0.7 * dt);
+      else fwd = Math.max(-CAR.reverseSpeed, fwd + input.throttle * spec.accel * 0.7 * dt);
     } else {
       fwd -= Math.sign(fwd) * Math.min(Math.abs(fwd), 3 * dt);
     }
-    fwd = clamp(fwd, -CAR.reverseSpeed, CAR.maxSpeed);
+    fwd = clamp(fwd, -CAR.reverseSpeed, spec.maxSpeed);
     if (input.handbrake) fwd -= Math.sign(fwd) * Math.min(Math.abs(fwd), 10 * dt);
 
     // Steering: less at high speed so it stays controllable.
-    const maxSteer = CAR.steer * (1 - Math.min(0.55, (Math.abs(fwd) / CAR.maxSpeed) * 0.7));
+    const maxSteer = spec.steer * (1 - Math.min(0.55, (Math.abs(fwd) / spec.maxSpeed) * 0.7));
     this.steer += (input.steer * maxSteer - this.steer) * Math.min(1, dt * 8);
-    const yawRate = (fwd / WHEELBASE) * Math.tan(this.steer);
+    const yawRate = (fwd / spec.wheelbase) * Math.tan(this.steer);
     this.yaw -= yawRate * dt;
 
     // Tyres: kill sideways sliding (less with the handbrake → drift).
@@ -103,15 +108,15 @@ export class DrivenCar {
     return impact;
   }
 
-  /** Two circles (front and back) against the buildings. */
+  /** A row of circles along the vehicle against the buildings. */
   private collide(): number {
     let impact = 0;
     const fx = Math.sin(this.yaw);
     const fz = Math.cos(this.yaw);
-    for (const off of [1.35, -1.35]) {
+    for (const off of this.spec.circles) {
       const cx = this.x + fx * off;
       const cz = this.z + fz * off;
-      const r = BODY_RADIUS;
+      const r = this.spec.radius;
       this.city.grid.query(cx - r, cz - r, cx + r, cz + r, (b) => {
         if (b.minY > this.y + 1.5 || b.maxY < this.y + 0.3) return;
         const px = clamp(cx, b.minX, b.maxX);
@@ -154,4 +159,34 @@ export class DrivenCar {
     if (impact > 3) this.lastImpact = 0;
     return impact;
   }
+}
+
+/** Gap between the closest collision circles of two vehicles, and the direction from a to b. */
+export function vehicleGap(
+  ax: number,
+  az: number,
+  ayaw: number,
+  a: VehicleSpec,
+  bx: number,
+  bz: number,
+  byaw: number,
+  b: VehicleSpec,
+): { gap: number; nx: number; nz: number } {
+  let best = { gap: Infinity, nx: 1, nz: 0 };
+  const afx = Math.sin(ayaw);
+  const afz = Math.cos(ayaw);
+  const bfx = Math.sin(byaw);
+  const bfz = Math.cos(byaw);
+  for (const oa of a.circles) {
+    const cax = ax + afx * oa;
+    const caz = az + afz * oa;
+    for (const ob of b.circles) {
+      const dx = bx + bfx * ob - cax;
+      const dz = bz + bfz * ob - caz;
+      const d = Math.hypot(dx, dz);
+      const gap = d - a.radius - b.radius;
+      if (gap < best.gap) best = { gap, nx: d > 1e-4 ? dx / d : 1, nz: d > 1e-4 ? dz / d : 0 };
+    }
+  }
+  return best;
 }

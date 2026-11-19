@@ -15,6 +15,7 @@ export type AnimMode =
   | 'wall'
   | 'swim'
   | 'sit'
+  | 'ride'
   | 'carry'
   | 'kneel'
   | 'down'
@@ -280,6 +281,20 @@ export function poseFor(a: AnimInput): PoseResult {
       pose['upperArm.L'] = aimArm('L', v(0.25, -0.2, 1));
       pose['upperArm.R'] = aimArm('R', v(-0.25, -0.2, 1));
       hips = -0.42;
+      break;
+    case 'ride':
+      // On a moped: sitting up, feet on the floorboard, hands on the handlebar.
+      pose['thigh.L'] = rot(-1.25, 0, 0.1);
+      pose['thigh.R'] = rot(-1.25, 0, -0.1);
+      pose['shin.L'] = rot(1.25);
+      pose['shin.R'] = rot(1.25);
+      pose.spine = rot(0.22);
+      pose.head = rot(-0.18);
+      pose['upperArm.L'] = aimArm('L', v(0.2, -0.32, 1));
+      pose['upperArm.R'] = aimArm('R', v(-0.2, -0.32, 1));
+      pose['forearm.L'] = rot(-0.35);
+      pose['forearm.R'] = rot(-0.35);
+      hips = -0.03;
       break;
     case 'down':
       // Lying on the back, seeing stars.

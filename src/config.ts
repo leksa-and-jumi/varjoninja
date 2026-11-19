@@ -202,6 +202,78 @@ export const CAR = {
   width: 2,
 } as const;
 
+/**
+ * Size and handling of each vehicle model. `circles` are the collision circles along the
+ * length (metres from the centre), `half` is half the length (for keeping distance in traffic).
+ */
+export interface VehicleSpec {
+  circles: readonly number[];
+  radius: number;
+  half: number;
+  maxSpeed: number;
+  accel: number;
+  wheelbase: number;
+  steer: number;
+  /** Two-wheelers lean into turns and show the rider. */
+  twoWheeler: boolean;
+}
+
+const CAR_SPEC: VehicleSpec = {
+  circles: [1.35, -1.35],
+  radius: 1.05,
+  half: 2.3,
+  maxSpeed: CAR.maxSpeed,
+  accel: CAR.accel,
+  wheelbase: 2.8,
+  steer: CAR.steer,
+  twoWheeler: false,
+};
+
+export const VEHICLES: Record<string, VehicleSpec> = {
+  sedan: CAR_SPEC,
+  taxi: CAR_SPEC,
+  police: { ...CAR_SPEC, maxSpeed: 45 },
+  van: { ...CAR_SPEC, half: 2.5, maxSpeed: 34, accel: 14 },
+  sports: { ...CAR_SPEC, maxSpeed: 52, accel: 26 },
+  ambulance: { ...CAR_SPEC, circles: [1.8, 0, -1.8], half: 2.9, maxSpeed: 36, accel: 15 },
+  suv: { ...CAR_SPEC, half: 2.45, maxSpeed: 40, accel: 17 },
+  pickup: { ...CAR_SPEC, circles: [1.6, 0, -1.6], half: 2.7, maxSpeed: 38, accel: 17 },
+  mini: {
+    ...CAR_SPEC,
+    circles: [0.8, -0.8],
+    radius: 0.9,
+    half: 1.65,
+    maxSpeed: 36,
+    accel: 20,
+    wheelbase: 2.1,
+    steer: 0.7,
+  },
+  bus: {
+    ...CAR_SPEC,
+    circles: [4.4, 2.2, 0, -2.2, -4.4],
+    radius: 1.3,
+    half: 5.8,
+    maxSpeed: 26,
+    accel: 8,
+    wheelbase: 5.5,
+    steer: 0.55,
+  },
+  moped: {
+    circles: [0.45, -0.45],
+    radius: 0.5,
+    half: 0.95,
+    maxSpeed: 30,
+    accel: 16,
+    wheelbase: 1.3,
+    steer: 0.55,
+    twoWheeler: true,
+  },
+};
+
+export function vehicleSpec(model: string): VehicleSpec {
+  return VEHICLES[model] ?? CAR_SPEC;
+}
+
 export const NET = {
   /** Player state is sent at most this often (messages / second). */
   sendRate: 8,
@@ -225,7 +297,7 @@ export const MISSIONS = {
 } as const;
 
 /** Bump when public/models/*.glb change, so browsers don't keep the old files. */
-export const MODEL_VERSION = 10;
+export const MODEL_VERSION = 11;
 
 export const STORAGE = {
   profile: 'varjoninja.profile.v1',
