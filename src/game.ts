@@ -105,7 +105,8 @@ export class Game {
     this.camera = new THREE.PerspectiveCamera(
       CAMERA.fov,
       window.innerWidth / window.innerHeight,
-      0.1,
+      // A slightly larger near plane keeps small details (eyes) sharp in the depth buffer.
+      0.2,
       6000,
     );
     this.city = generateCity(CITY.seed);

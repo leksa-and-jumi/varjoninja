@@ -21,7 +21,7 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'public', '
 
 # Region numbers (must match REGION in src/render/characters.ts).
 (SKIN, TOP, BOTTOM, SHOES, BELT, HEAD, EYES, HANDS, FOREARM, NECK, FACE, HAIR, HAT, ACCENT,
- EYEWHITE, NOSE, EARS, SOLE, BROWS, MOUTH) = range(20)
+ EYEWHITE, NOSE, EARS, SOLE, BROWS, MOUTH, IRIS) = range(21)
 # Body: the region comes from the rest position in the shader (see characters.ts).
 BODY_AUTO = 30
 
@@ -173,6 +173,136 @@ def body_region(v):
     return TOP
 
 
+
+# --------------------------------------------------------------------------------------------
+# Head and face
+# --------------------------------------------------------------------------------------------
+
+HEAD_C = Vector((0, 0.008, 1.70))
+
+
+def _g(d, sigma):
+    return math.exp(-(d * d) / (2 * sigma * sigma))
+
+
+def _smooth(e0, e1, x):
+    t = max(0.0, min(1.0, (x - e0) / (e1 - e0)))
+    return t * t * (3 - 2 * t)
+
+
+def _nose_weight(l):
+    front = _smooth(0.0, -0.08, l.y)
+    w = _g(l.x, 0.0095) * _smooth(0.036, 0.0, l.z) * _smooth(-0.052, -0.026, l.z) * front
+    amt = 0.004 + 0.022 * max(0.0, min(1.0, (0.03 - l.z) / 0.058))
+    return w, amt
+
+
+def _lip_weight(l):
+    front = _smooth(0.0, -0.08, l.y)
+    upper = _g(l.x, 0.017) * _g(l.z + 0.058, 0.0045)
+    lower = _g(l.x, 0.016) * _g(l.z + 0.072, 0.005)
+    return max(upper, lower) * front
+
+
+def shape_head(co):
+    """Turn a round egg into a face: jaw and chin, cheekbones, eye sockets, brow, nose, lips."""
+    l = co - HEAD_C
+    front = _smooth(0.0, -0.08, l.y)
+    x, y, z = l.x, l.y, l.z
+    # Narrower jaw and a little chin.
+    if z < 0:
+        x *= 1 - 0.2 * _smooth(-0.02, -0.13, z)
+        y -= 0.012 * front * _smooth(-0.085, -0.13, z)
+    for side in (-1, 1):
+        # Cheekbones.
+        w = _g((Vector((x, y, z)) - Vector((side * 0.066, -0.08, -0.014))).length, 0.022)
+        x += side * 0.006 * w
+        y -= 0.004 * w
+        # Eye sockets.
+        w = _g((Vector((x, y, z)) - Vector((side * 0.041, -0.105, 0.006))).length, 0.016)
+        y += 0.012 * w
+        # Nostril wings.
+        w = _g((Vector((x, y, z)) - Vector((side * 0.012, -0.11, -0.034))).length, 0.008)
+        y -= 0.006 * w
+    # Brow ridge.
+    w = _g(z - 0.033, 0.011) * front * _smooth(0.075, 0.035, abs(x))
+    y -= 0.006 * w
+    # Nose.
+    nw, amt = _nose_weight(Vector((x, y, z)))
+    y -= amt * nw
+    # Lips, with the mouth corners tucked in.
+    y -= 0.006 * _lip_weight(Vector((x, y, z)))
+    for side in (-1, 1):
+        y += 0.003 * _g((Vector((x, y, z)) - Vector((side * 0.025, -0.1, -0.065))).length, 0.007)
+    return HEAD_C + Vector((x, y, z))
+
+
+def build_head():
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=64, ring_count=40, radius=0.118, location=HEAD_C)
+    head = bpy.context.active_object
+    head.scale = (0.95, 1.0, 1.12)
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    for v in head.data.vertices:
+        v.co = shape_head(v.co)
+    head.data.update()
+    bpy.ops.object.shade_smooth()
+
+    def head_region(v):
+        l = v - HEAD_C
+        nw, amt = _nose_weight(l)
+        if nw * amt > 0.004:
+            return NOSE
+        # Eye band in front (the ninja mask opening).
+        if v.y < -0.05 and 1.66 < v.z < 1.745:
+            return FACE
+        if v.z < 1.6:
+            return NECK
+        return HEAD
+
+    set_region_uv(head, head_region)
+
+    def blob(loc, radius, scale, region, segments=16, rings=10, keep=None):
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=rings, radius=radius, location=loc)
+        o = bpy.context.active_object
+        o.scale = scale
+        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+        if keep:
+            bm = bmesh.new()
+            bm.from_mesh(o.data)
+            bmesh.ops.delete(bm, geom=[vv for vv in bm.verts if not keep(vv.co - Vector(loc))], context='VERTS')
+            bm.to_mesh(o.data)
+            bm.free()
+        bpy.ops.object.shade_smooth()
+        set_region_uv(o, lambda v: region)
+        return o
+
+    parts = []
+    for sx in (-1, 1):
+        ex, ey, ez = sx * 0.041, -0.093, 1.706
+        # Eyeball, coloured iris, dark pupil.
+        parts.append(blob((ex, ey, ez), 0.0145, (1, 1, 1), EYEWHITE, 20, 14))
+        # (Iris and pupil sit a couple of millimetres in front of the eyeball, so they still
+        # win the depth test when seen from far away.)
+        parts.append(blob((ex, ey - 0.0146, ez), 0.0076, (1, 0.55, 1), IRIS, 16, 10))
+        parts.append(blob((ex, ey - 0.0172, ez), 0.0038, (1, 0.55, 1), EYES, 10, 6))
+        # Upper eyelid: a skin cap over the top of the eye.
+        parts.append(blob((ex, ey, ez), 0.0158, (1.05, 1, 1), FACE, 20, 14,
+                          keep=lambda c: c.z > 0.0035 and c.y < 0.004))
+        # Eyebrow: a gently curved row of overlapping flat lumps (thicker on the inside).
+        for k in range(9):
+            t = k / 8
+            bx = sx * (0.022 + 0.042 * t)
+            bz = 1.735 + 0.006 * math.sin(t * math.pi * 0.85) - 0.002 * t
+            r = 0.0062 - 0.0018 * t
+            parts.append(blob((bx, -0.1 + 0.013 * t * t, bz), r, (1.5, 0.5, 0.5), BROWS, 10, 6))
+        # Ears (lips are added once, after the loop).
+        parts.append(blob((sx * 0.106, 0.012, 1.69), 0.028, (0.38, 0.72, 1.15), EARS, 14, 10))
+    # Lips: soft upper and lower lip.
+    parts.append(blob((0, -0.1015, 1.6415), 0.016, (1.1, 0.32, 0.22), MOUTH, 16, 10))
+    parts.append(blob((0, -0.1, 1.6325), 0.0155, (1.0, 0.36, 0.27), MOUTH, 16, 10))
+    return head, parts
+
+
 def build_body():
     me = bpy.data.meshes.new('body')
     names = [n for n in J if n != 'head']
@@ -195,41 +325,8 @@ def build_body():
     bpy.ops.object.modifier_apply(modifier='sub')
     bpy.ops.object.shade_smooth()
 
-    # Head: a separate smooth egg, slightly larger at the back.
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=28, ring_count=18, radius=0.118, location=(0, 0.008, 1.7))
-    head = bpy.context.active_object
-    head.scale = (0.95, 1.0, 1.12)
-    bpy.ops.object.transform_apply(scale=True)
-    bpy.ops.object.shade_smooth()
-
-    def head_region(v):
-        # Eye band in front (ninja mask opening).
-        if v.y < -0.05 and 1.66 < v.z < 1.745:
-            return FACE
-        if v.z < 1.6:
-            return NECK
-        return HEAD
-
-    set_region_uv(head, head_region)
-
-    # Face: eyes (white + pupil), brows, nose, ears and mouth.
-    def blob(loc, radius, scale, region, segments=14, rings=9):
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=rings, radius=radius, location=loc)
-        o = bpy.context.active_object
-        o.scale = scale
-        bpy.ops.object.transform_apply(scale=True)
-        bpy.ops.object.shade_smooth()
-        set_region_uv(o, lambda v: region)
-        return o
-
-    eyes = []
-    for sx in (-1, 1):
-        eyes.append(blob((sx * 0.042, -0.097, 1.706), 0.022, (1.0, 0.5, 0.78), EYEWHITE))
-        eyes.append(blob((sx * 0.042, -0.106, 1.705), 0.0115, (1.0, 0.5, 1.0), EYES, 10, 7))
-        eyes.append(blob((sx * 0.044, -0.104, 1.737), 0.022, (1.05, 0.28, 0.22), BROWS, 10, 6))
-        eyes.append(blob((sx * 0.112, 0.008, 1.69), 0.03, (0.35, 0.75, 1.15), EARS, 12, 8))
-    eyes.append(blob((0, -0.113, 1.674), 0.015, (0.8, 0.9, 1.3), NOSE, 12, 8))
-    eyes.append(blob((0, -0.101, 1.632), 0.018, (1.2, 0.25, 0.14), MOUTH, 10, 6))
+    head, face_parts = build_head()
+    eyes = face_parts
 
     # The body's clothes are worked out per pixel in the game shader (crisp hems and sleeves),
     # so the body mesh only says "body" here.
@@ -312,7 +409,7 @@ def build_character():
     acc = []
 
     def hair_short():
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=14, radius=0.127, location=(0, 0.012, 1.722))
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=40, ring_count=24, radius=0.129, location=(0, 0.012, 1.722))
         o = bpy.context.active_object
         o.scale = (0.97, 1.02, 1.0)
         bpy.ops.object.transform_apply(scale=True)
@@ -322,8 +419,18 @@ def build_character():
         # Keep the face free: cut away everything in front below the forehead.
         # (Coordinates relative to the sphere centre, wherever Blender put the vertices.)
         c = Vector((0, 0.012, 1.722)) - o.location
-        cut = [v for v in bm.verts if ((v.co.z - c.z) < 0.045 and (v.co.y - c.y) < -0.03) or ((v.co.z - c.z) < -0.01 and (v.co.y - c.y) < 0.03) or (v.co.z - c.z) < -0.045]
+        def hairline(v):
+            # Hairline: a little lower at the temples than in the middle.
+            return 0.045 - 0.012 * min(1.0, abs(v.co.x - c.x) / 0.1)
+
+        cut = [v for v in bm.verts if ((v.co.z - c.z) < hairline(v) and (v.co.y - c.y) < -0.03) or ((v.co.z - c.z) < -0.01 and (v.co.y - c.y) < 0.03) or (v.co.z - c.z) < -0.045]
         bmesh.ops.delete(bm, geom=cut, context='VERTS')
+        # Tuck the front edge in against the forehead, so it is not a hard shelf.
+        for v in bm.verts:
+            rel = v.co - c
+            if rel.y < 0:
+                k = 1 - min(1.0, max(0.0, (rel.z - 0.045) / 0.05))
+                v.co = c + rel * (1 - 0.07 * k * k)
         bm.to_mesh(o.data)
         bm.free()
         bpy.ops.object.shade_smooth()
