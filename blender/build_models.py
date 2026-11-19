@@ -665,8 +665,13 @@ def build_car(kind):
         'van': dict(L=5.0, W=2.0, body=1.05, top=2.25, c0=-1.6, c1=1.85, ride=0.32, r=0.37),
         'sports': dict(L=4.4, W=1.94, body=0.62, top=1.18, c0=-0.2, c1=1.1, ride=0.2, r=0.34),
         'ambulance': dict(L=5.8, W=2.1, body=1.0, top=2.3, c0=-2.1, c1=-1.0, ride=0.34, r=0.38),
+        'suv': dict(L=4.85, W=2.0, body=0.98, top=1.98, c0=-0.85, c1=1.7, ride=0.44, r=0.41),
+        'pickup': dict(L=5.4, W=2.02, body=0.95, top=1.95, c0=-0.95, c1=0.3, ride=0.44, r=0.42),
+        'mini': dict(L=3.3, W=1.66, body=0.72, top=1.56, c0=-0.55, c1=1.12, ride=0.24, r=0.3),
     }[kind]
     boxy = kind in ('van', 'ambulance')
+    # SUVs and pickups: upright but not quite van-boxy.
+    tall = kind in ('suv', 'pickup')
     white_body = kind in ('police', 'ambulance')
     L, W, ride, r = spec['L'], spec['W'], spec['ride'], spec['r']
     hl = L / 2
@@ -674,7 +679,7 @@ def build_car(kind):
     zb = ride
     zt = ride + spec['body']
     # Lower body: a hull with a sloped nose and tail (front is -Y).
-    nose = 0.25 if not boxy else 0.08
+    nose = 0.08 if boxy else 0.16 if tall else 0.25
     lower = hull(
         [
             (sx * hw, sy * hl, z)
@@ -701,7 +706,7 @@ def build_car(kind):
 
     # Cabin: glass hull with a painted roof on top.
     c0, c1, top = spec['c0'], spec['c1'], spec['top'] + ride - 0.28
-    slope = 0.45 if not boxy else 0.15
+    slope = 0.15 if boxy else 0.25 if tall else 0.45
     cabin = hull(
         [(sx * hw * 0.94, c0 - slope, zt) for sx in (-1, 1)]
         + [(sx * hw * 0.94, c1 + slope * 0.6, zt) for sx in (-1, 1)]
@@ -744,6 +749,29 @@ def build_car(kind):
         bevel(box, 0.06, 2)
         parts.append(box)
 
+    if kind == 'suv':
+        # Roof rails and a spare wheel on the back.
+        for sx in (-1, 1):
+            parts.append(box_obj('rail', (0.06, (c1 - 0.17) - (c0 + 0.27) - 0.2, 0.06), (sx * hw * 0.7, (c0 + c1 + 0.1) / 2, top + 0.11), m['trim']))
+        bpy.ops.mesh.primitive_cylinder_add(vertices=20, radius=0.36, depth=0.22, location=(0, hl + 0.12, zt - 0.15), rotation=(math.radians(90), 0, 0))
+        spare = bpy.context.active_object
+        assign(spare, m['tire'])
+        parts.append(spare)
+    if kind == 'pickup':
+        # Open bed behind the cab: side walls, tailgate and a dark floor.
+        y0, y1 = c1 + slope * 0.6 + 0.12, hl - 0.04
+        bh = 0.42
+        for sx in (-1, 1):
+            parts.append(box_obj('bedwall', (0.08, y1 - y0, bh), (sx * (hw * 0.98 - 0.04), (y0 + y1) / 2, zt + bh / 2 - 0.02), m['paint']))
+        parts.append(box_obj('bedfront', (W * 0.96, 0.08, bh), (0, y0 + 0.04, zt + bh / 2 - 0.02), m['paint']))
+        parts.append(box_obj('tailgate', (W * 0.96, 0.08, bh), (0, y1 - 0.04, zt + bh / 2 - 0.02), m['paint']))
+        parts.append(box_obj('bedfloor', (W * 0.86, y1 - y0 - 0.12, 0.03), (0, (y0 + y1) / 2, zt + 0.01), m['trim']))
+    if kind in ('suv', 'pickup'):
+        # Chunky black wheel arches and a bull bar look.
+        for sx in (-1, 1):
+            for wy in (-L * 0.32, L * 0.32):
+                parts.append(box_obj('arch', (0.08, r * 2.6, 0.14), (sx * (hw + 0.02), wy, zb + r * 2 + 0.02), m['trim']))
+
     # Bumpers, lights, mirrors.
     parts.append(box_obj('bumperF', (W * 0.96, 0.16, 0.2), (0, -hl - 0.02, zb + 0.18), m['trim']))
     parts.append(box_obj('bumperR', (W * 0.96, 0.16, 0.2), (0, hl + 0.02, zb + 0.18), m['trim']))
@@ -775,9 +803,173 @@ def build_car(kind):
     export(os.path.join(OUT, f'car_{kind}.glb'), [root, body, *wheels])
 
 
+def cut_arches(obj, ys, r, width):
+    """Cut round wheel arches through a body (boolean difference)."""
+    for y in ys:
+        bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=r, depth=width, location=(0, y, r * 0.9), rotation=(0, math.radians(90), 0))
+        c = bpy.context.active_object
+        mod = obj.modifiers.new('arch', 'BOOLEAN')
+        mod.operation = 'DIFFERENCE'
+        mod.solver = 'EXACT'
+        mod.object = c
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True)
+        bpy.ops.object.modifier_apply(modifier='arch')
+        bpy.data.objects.remove(c, do_unlink=True)
+
+
+def build_bus():
+    reset()
+    m = car_materials()
+    parts = []
+    L, W, ride, r = 11.6, 2.5, 0.32, 0.5
+    hl, hw = L / 2, W / 2
+    fy, ry = -hl + 2.5, hl - 3.0  # axles (front is -Y)
+    z0 = ride
+    z1 = ride + 1.05  # top of the painted skirt
+    z2 = ride + 2.5  # top of the window band
+    z3 = ride + 2.95  # roof
+    lower = box_obj('lower', (W, L, z1 - z0), (0, 0, (z0 + z1) / 2), m['paint'])
+    cut_arches(lower, (fy, ry), r + 0.1, W + 0.4)
+    bevel(lower, 0.08, 2)
+    parts.append(lower)
+    band = box_obj('windows', (W * 0.985, L * 0.995, z2 - z1), (0, 0, (z1 + z2) / 2), m['glass'])
+    bevel(band, 0.05, 2)
+    parts.append(band)
+    roof = box_obj('roof', (W, L, z3 - z2), (0, 0, (z2 + z3) / 2), m['white'])
+    bevel(roof, 0.14, 3)
+    parts.append(roof)
+    # Window pillars along both sides.
+    n = 8
+    for i in range(n + 1):
+        y = -hl + 0.9 + i * (L - 1.5) / n
+        for sx in (-1, 1):
+            parts.append(box_obj('pillar', (0.03, 0.14, z2 - z1), (sx * (hw - 0.0), y, (z1 + z2) / 2), m['white']))
+    # Doors on the right side (-X): front and middle.
+    for dy in (-hl + 1.05, 0.6):
+        parts.append(box_obj('door', (0.03, 1.15, z2 - z0 - 0.25), (-hw - 0.005, dy, (z0 + 0.15 + z2 - 0.1) / 2), m['glass']))
+        parts.append(box_obj('doorline', (0.035, 0.04, z2 - z0 - 0.25), (-hw - 0.006, dy, (z0 + 0.15 + z2 - 0.1) / 2), m['trim']))
+    # Big front window, destination sign, mirrors.
+    parts.append(box_obj('windscreen', (W * 0.9, 0.03, z2 - z1 + 0.35), (0, -hl - 0.005, (z1 - 0.35 + z2) / 2), m['glass']))
+    parts.append(box_obj('sign', (W * 0.7, 0.03, 0.26), (0, -hl - 0.01, z2 + 0.2), m['sign']))
+    parts.append(box_obj('sign', (W * 0.5, 0.03, 0.22), (0, hl + 0.01, z2 + 0.18), m['sign']))
+    for sx in (-1, 1):
+        parts.append(box_obj('mirror', (0.08, 0.1, 0.3), (sx * (hw + 0.25), -hl - 0.15, z2 - 0.3), m['trim']))
+        parts.append(box_obj('mirrorarm', (0.3, 0.05, 0.05), (sx * (hw + 0.12), -hl - 0.1, z2 - 0.1), m['trim']))
+        parts.append(box_obj('headlight', (0.4, 0.06, 0.16), (sx * hw * 0.7, -hl - 0.01, z0 + 0.55), m['headlight']))
+        parts.append(box_obj('taillight', (0.2, 0.06, 0.45), (sx * hw * 0.85, hl + 0.01, z0 + 0.75), m['taillight']))
+    parts.append(box_obj('bumperF', (W * 1.0, 0.18, 0.28), (0, -hl - 0.04, z0 + 0.2), m['trim']))
+    parts.append(box_obj('bumperR', (W * 1.0, 0.18, 0.28), (0, hl + 0.04, z0 + 0.2), m['trim']))
+    parts.append(box_obj('grille', (W * 0.5, 0.04, 0.3), (0, hl + 0.01, z1 - 0.3), m['trim']))
+    body = joined(parts, 'body')
+    wheels = [
+        wheel('wheel_fl', hw - 0.2, fy, r, 0.32, m),
+        wheel('wheel_fr', -hw + 0.2, fy, r, 0.32, m),
+        wheel('wheel_rl', hw - 0.2, ry, r, 0.32, m),
+        wheel('wheel_rr', -hw + 0.2, ry, r, 0.32, m),
+    ]
+    root = bpy.data.objects.new('bus', None)
+    bpy.context.collection.objects.link(root)
+    for o in [body, *wheels]:
+        o.parent = root
+    export(os.path.join(OUT, 'car_bus.glb'), [root, body, *wheels])
+
+
+def moped_wheel(name, y, r, w, mats):
+    bpy.ops.mesh.primitive_cylinder_add(vertices=20, radius=r, depth=w, location=(0, y, r), rotation=(0, math.radians(90), 0))
+    tire = bpy.context.active_object
+    assign(tire, mats['tire'])
+    bevel(tire, 0.035, 2)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=r * 0.6, depth=w + 0.02, location=(0, y, r), rotation=(0, math.radians(90), 0))
+    rim = bpy.context.active_object
+    assign(rim, mats['rim'])
+    o = joined([tire, rim], name)
+    bpy.context.scene.cursor.location = (0, y, r)
+    bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
+    return o
+
+
+def build_moped():
+    """A step-through scooter. Faces -Y like the cars; the rider sits at y≈+0.3."""
+    reset()
+    m = car_materials()
+    parts = []
+    r, fy, ry = 0.24, -0.66, 0.6
+    # Rear body over the back wheel.
+    rear = hull(
+        [(sx * 0.2, y, z) for sx in (-1, 1) for y in (0.02, 0.62) for z in (0.34, 0.74)]
+        + [(sx * 0.13, 0.92, z) for sx in (-1, 1) for z in (0.5, 0.7)]
+        + [(sx * 0.12, -0.05, 0.3) for sx in (-1, 1)],
+        'rear',
+    )
+    assign(rear, m['paint'])
+    bevel(rear, 0.07, 3)
+    parts.append(rear)
+    # Seat.
+    seat = box_obj('seat', (0.32, 0.66, 0.1), (0, 0.36, 0.8), m['trim'])
+    bevel(seat, 0.045, 3)
+    parts.append(seat)
+    # Floorboard and the tunnel under it.
+    floor = box_obj('floor', (0.34, 0.6, 0.07), (0, -0.16, 0.31), m['trim'])
+    bevel(floor, 0.02, 2)
+    parts.append(floor)
+    tunnel = hull([(sx * 0.15, y, z) for sx in (-1, 1) for y in (-0.42, 0.1) for z in (0.2, 0.28)], 'tunnel')
+    assign(tunnel, m['paint'])
+    parts.append(tunnel)
+    # Leg shield in front of the knees.
+    shield = hull(
+        [(sx * 0.22, y, 0.28) for sx in (-1, 1) for y in (-0.44, -0.52)]
+        + [(sx * 0.13, y, 1.0) for sx in (-1, 1) for y in (-0.52, -0.6)],
+        'shield',
+    )
+    assign(shield, m['paint'])
+    bevel(shield, 0.04, 2)
+    parts.append(shield)
+    # Steering column, front fender, handlebar with a headlight cowl.
+    bpy.ops.mesh.primitive_cylinder_add(vertices=10, radius=0.03, depth=0.86, location=(0, fy + 0.04, 0.66), rotation=(math.radians(-14), 0, 0))
+    col = bpy.context.active_object
+    assign(col, m['rim'])
+    parts.append(col)
+    fender = hull(
+        [(sx * 0.09, y, z) for sx in (-1, 1) for y, z in ((fy - 0.2, 0.42), (fy, 0.53), (fy + 0.2, 0.44))]
+        + [(sx * 0.09, y, z - 0.04) for sx in (-1, 1) for y, z in ((fy - 0.2, 0.42), (fy, 0.53), (fy + 0.2, 0.44))],
+        'fender',
+    )
+    assign(fender, m['paint'])
+    parts.append(fender)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=10, radius=0.022, depth=0.66, location=(0, -0.54, 1.08), rotation=(0, math.radians(90), 0))
+    bar = bpy.context.active_object
+    assign(bar, m['trim'])
+    parts.append(bar)
+    cowl = box_obj('cowl', (0.26, 0.16, 0.15), (0, -0.6, 1.06), m['paint'])
+    bevel(cowl, 0.05, 3)
+    parts.append(cowl)
+    parts.append(box_obj('headlight', (0.13, 0.04, 0.09), (0, -0.685, 1.06), m['headlight']))
+    parts.append(box_obj('taillight', (0.14, 0.04, 0.06), (0, 0.93, 0.62), m['taillight']))
+    for sx in (-1, 1):
+        parts.append(box_obj('grip', (0.1, 0.045, 0.045), (sx * 0.31, -0.54, 1.08), m['tire']))
+        parts.append(box_obj('mirrorarm', (0.02, 0.02, 0.18), (sx * 0.24, -0.56, 1.18), m['rim']))
+        parts.append(box_obj('mirror', (0.1, 0.03, 0.07), (sx * 0.25, -0.56, 1.29), m['trim']))
+    # Exhaust on the right.
+    bpy.ops.mesh.primitive_cylinder_add(vertices=12, radius=0.045, depth=0.42, location=(-0.17, 0.62, 0.26), rotation=(math.radians(90), 0, 0))
+    ex = bpy.context.active_object
+    assign(ex, m['rim'])
+    parts.append(ex)
+    body = joined(parts, 'body')
+    wheels = [moped_wheel('wheel_f', fy, r, 0.11, m), moped_wheel('wheel_r', ry, r, 0.12, m)]
+    root = bpy.data.objects.new('moped', None)
+    bpy.context.collection.objects.link(root)
+    for o in [body, *wheels]:
+        o.parent = root
+    export(os.path.join(OUT, 'car_moped.glb'), [root, body, *wheels])
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     build_character()
-    for kind in ('sedan', 'taxi', 'police', 'van', 'sports', 'ambulance'):
+    for kind in ('sedan', 'taxi', 'police', 'van', 'sports', 'ambulance', 'suv', 'pickup', 'mini'):
         build_car(kind)
+    build_bus()
+    build_moped()
     print('Models written to', os.path.abspath(OUT))

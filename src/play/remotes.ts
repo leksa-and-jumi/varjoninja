@@ -163,7 +163,8 @@ export class Remotes {
           this.scene.add(r.car.root);
         }
       }
-      r.view.setVisible(!driving);
+      const riding = !!r.car?.twoWheeler;
+      r.view.setVisible(!driving || riding);
       if (r.car) r.car.update(r.pos.x, r.pos.y, r.pos.z, r.yaw, Math.hypot(s.vx, s.vz), 0, dt);
       // Finishing moves (index 5+) last about twice as long as a punch.
       const attackT = (now - r.attackStart) / (s.attack >= 5 ? 900 : 450);
@@ -182,6 +183,7 @@ export class Remotes {
               ? { move: ATTACKS[s.attack] ?? 'punchR', t: attackT }
               : undefined,
           hurt: 0,
+          ride: riding ? r.car!.lean : undefined,
         },
         dt,
       );

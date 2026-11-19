@@ -1,7 +1,7 @@
 // Everything alive in the city besides the ninja: people, cars, crimes, police and fights.
 
 import * as THREE from 'three';
-import { AMBULANCE, CITY, COMBAT, PEDS, PLAYER, POLICE, TRAFFIC } from '../config';
+import { AMBULANCE, CITY, COMBAT, PEDS, PLAYER, POLICE, TRAFFIC, vehicleSpec } from '../config';
 import { Ambulances } from './ambulances';
 import { Decals } from '../render/decals';
 import { groundHeight, isOnRoad, type City } from '../logic/city';
@@ -23,7 +23,7 @@ import type { PlayerBody } from '../logic/player';
 import { hash, Rng } from '../logic/rng';
 import { Ragdoll, type RagdollWorld } from '../logic/ragdoll';
 import { spawnCar, stepCar, type TrafficCar } from '../logic/traffic';
-import { DrivenCar, type DriveInput } from '../logic/vehicle';
+import { DrivenCar, vehicleGap, type DriveInput } from '../logic/vehicle';
 import { poseFor, type AnimInput, type AnimMode } from '../render/animator';
 import { CarView, CAR_COLORS, type CarModel } from '../render/carView';
 import { animateCat, makeCat } from '../render/catView';
@@ -96,6 +96,9 @@ interface CarEntity {
   thiefCrime: number;
   hp: number;
   honk: number;
+  /** Moped rider (a person sitting on it), or -1 when nobody rides it. */
+  riderSeed: number;
+  rider: CharacterView | null;
 }
 
 interface Parked {
@@ -151,6 +154,23 @@ export function lookFor(kind: PersonKind, seed: number): Look {
   }
   return look;
 }
+
+/** A kicked-over moped lies on the road this long (s), then vanishes so traffic can pass. */
+const MOPED_FALLEN_TIME = 20;
+
+/** How often each vehicle shows up in traffic (shares add up to 1). */
+const TRAFFIC_MIX: [CarModel, number][] = [
+  ['sedan', 0.25],
+  ['taxi', 0.1],
+  ['van', 0.07],
+  ['sports', 0.06],
+  ['police', 0.07],
+  ['suv', 0.1],
+  ['pickup', 0.08],
+  ['mini', 0.07],
+  ['bus', 0.05],
+  ['moped', 0.15],
+];
 
 export class World {
   people: Person[] = [];
@@ -404,8 +424,66 @@ export class World {
     return v;
   }
 
+  /** Put a moped rider on the seat (or take them off with seed -1). */
+  private updateRider(c: CarEntity, dt: number, camDist: number): void {
+    if (!c.view || c.riderSeed < 0 || camDist > 110) {
+      if (c.rider) this.releaseRider(c);
+      return;
+    }
+    if (!c.rider) {
+      const look = lookFor('civ', c.riderSeed);
+      let v = this.viewPool.pop();
+      if (v) v.setLook(look);
+      else v = new CharacterView(look);
+      v.root.position.set(0, 0, 0);
+      v.root.rotation.set(0, 0, 0);
+      v.body.rotation.set(0, 0, 0);
+      v.body.position.set(0, 0, 0);
+      c.view.seat.add(v.root);
+      c.rider = v;
+      dt = 1; // snap straight into the riding pose
+    }
+    c.rider.setShadow(camDist < 45);
+    if (camDist > 50 && dt < 1) return;
+    const r = poseFor({
+      mode: 'ride',
+      phase: 0,
+      time: this.time + c.riderSeed,
+      vy: 0,
+      ninja: false,
+    });
+    c.rider.hipsOffset = r.hips;
+    c.rider.applyPose(r.pose, r.sharpness, dt);
+  }
+
+  private releaseRider(c: CarEntity): void {
+    const v = c.rider;
+    if (!v) return;
+    c.rider = null;
+    v.root.removeFromParent();
+    if (this.viewPool.length < 30) this.viewPool.push(v);
+    else v.dispose();
+  }
+
+  /** The moped rider gets off (kicked off, or the ninja takes the moped) and runs away. */
+  private riderJumpsOff(c: CarEntity, fromX: number, fromZ: number): void {
+    if (c.riderSeed < 0) return;
+    this.releaseRider(c);
+    const t = c.traffic;
+    const block = nearestBlock(this.city, t.x, t.z);
+    const p = this.addPerson('civ', block, 0);
+    p.seed = c.riderSeed;
+    c.riderSeed = -1;
+    p.x = t.x - Math.cos(t.yaw) * 1.2;
+    p.z = t.z + Math.sin(t.yaw) * 1.2;
+    p.threatX = fromX;
+    p.threatZ = fromZ;
+    setState(p, 'panic');
+  }
+
   private releaseCarView(v: CarView): void {
     v.root.removeFromParent();
+    v.fallen = false;
     let pool = this.carPool.get(v.model);
     if (!pool) this.carPool.set(v.model, (pool = []));
     if (pool.length < 12) pool.push(v);
@@ -420,17 +498,17 @@ export class World {
     if (!t) return;
     // Don't spawn on top of another car.
     if (this.cars.some((c) => Math.hypot(c.traffic.x - t.x, c.traffic.z - t.z) < 10)) return;
-    const roll = this.rng.next();
-    const model: CarModel =
-      roll < 0.45
-        ? 'sedan'
-        : roll < 0.62
-          ? 'taxi'
-          : roll < 0.8
-            ? 'van'
-            : roll < 0.92
-              ? 'sports'
-              : 'police';
+    let roll = this.rng.next();
+    let model: CarModel = 'sedan';
+    for (const [m, share] of TRAFFIC_MIX) {
+      model = m;
+      roll -= share;
+      if (roll < 0) break;
+    }
+    // Buses and mopeds take it easier.
+    if (model === 'bus') t.cruise *= 0.8;
+    if (model === 'moped') t.cruise *= 0.85;
+    t.speed = t.cruise;
     const color = this.rng.pick(CAR_COLORS);
     this.cars.push({
       traffic: t,
@@ -442,6 +520,8 @@ export class World {
       thiefCrime: -1,
       hp: 3,
       honk: 0,
+      riderSeed: model === 'moped' ? this.rng.int(1, 1e6) : -1,
+      rider: null,
     });
   }
 
@@ -685,6 +765,13 @@ export class World {
     c.traffic.speed = 0;
     this.fx.sparks(x, y, z);
     this.cb.sound('carHit');
+    if (c.model === 'moped') {
+      // A moped tips over and the rider jumps off. It disappears in a puff later.
+      c.stunned = 9999;
+      c.hp = MOPED_FALLEN_TIME;
+      if (c.view) c.view.fallen = true;
+      this.riderJumpsOff(c, x, z);
+    }
     if (c.thiefCrime >= 0) {
       c.hp--;
       if (c.hp <= 0) this.stopThiefCar(c);
@@ -828,21 +915,28 @@ export class World {
     if (b.kind === 'traffic') {
       const c = this.cars[b.i]!;
       this.cars.splice(b.i, 1);
-      const car = new DrivenCar(this.city);
+      const car = new DrivenCar(this.city, c.model);
       car.place(c.traffic.x, c.traffic.z, c.traffic.yaw, c.traffic.speed * 0.3);
       const view = c.view ?? this.carView(c.model, c.color);
+      view.fallen = false;
       this.driving = { car, view, model: c.model, color: c.color };
-      // The driver hops out and runs.
-      const side = { x: -Math.cos(c.traffic.yaw) * 2, z: Math.sin(c.traffic.yaw) * 2 };
-      const block = nearestBlock(this.city, c.traffic.x, c.traffic.z);
-      const driver = this.addPerson('civ', block, 0);
-      driver.x = c.traffic.x + side.x;
-      driver.z = c.traffic.z + side.z;
-      driver.threatX = player.pos.x;
-      driver.threatZ = player.pos.z;
-      setState(driver, 'panic');
+      if (c.model === 'moped') {
+        // Fallen over or not, the rider (if still on it) jumps off and runs.
+        this.riderJumpsOff(c, player.pos.x, player.pos.z);
+      } else {
+        // The driver hops out and runs.
+        const side = { x: -Math.cos(c.traffic.yaw) * 2, z: Math.sin(c.traffic.yaw) * 2 };
+        const block = nearestBlock(this.city, c.traffic.x, c.traffic.z);
+        const driver = this.addPerson('civ', block, 0);
+        driver.x = c.traffic.x + side.x;
+        driver.z = c.traffic.z + side.z;
+        driver.threatX = player.pos.x;
+        driver.threatZ = player.pos.z;
+        setState(driver, 'panic');
+      }
     } else {
       this.driving = this.parked.splice(b.i, 1)[0]!;
+      this.driving.view.fallen = false;
     }
     player.setMode('drive');
     player.anchor = null;
@@ -896,29 +990,50 @@ export class World {
     }
     // Running into people and other cars.
     const sp = d.car.speed;
+    const spec = d.car.spec;
+    const fx = Math.sin(d.car.yaw);
+    const fz = Math.cos(d.car.yaw);
     for (const p of this.targets()) {
-      const dx = p.x - d.car.x;
-      const dz = p.z - d.car.z;
-      if (Math.hypot(dx, dz) < 2 && sp > 4 && Math.abs(p.y - d.car.y) < 1.5) {
-        this.damagePerson(p, sp * 1.6, d.car.vx, d.car.vz, Math.min(16, sp * 0.6));
+      if (sp <= 4 || Math.abs(p.y - d.car.y) >= 1.5) continue;
+      const touches = spec.circles.some(
+        (o) => Math.hypot(p.x - (d.car.x + fx * o), p.z - (d.car.z + fz * o)) < spec.radius + 0.5,
+      );
+      if (touches) {
+        // A moped hits a lot softer than a car (or a bus).
+        const weight = spec.twoWheeler ? 0.5 : 1;
+        this.damagePerson(
+          p,
+          sp * 1.6 * weight,
+          d.car.vx,
+          d.car.vz,
+          Math.min(16, sp * 0.6 * weight),
+        );
         this.cb.sound('carHit');
       }
     }
     for (const c of this.cars) {
-      const dx = c.traffic.x - d.car.x;
-      const dz = c.traffic.z - d.car.z;
-      const dist = Math.hypot(dx, dz);
-      if (dist < 3 && dist > 0.01) {
-        const vn = (d.car.vx * dx + d.car.vz * dz) / dist;
+      const t = c.traffic;
+      const g = vehicleGap(
+        d.car.x,
+        d.car.z,
+        d.car.yaw,
+        spec,
+        t.x,
+        t.z,
+        t.yaw,
+        vehicleSpec(c.model),
+      );
+      if (g.gap < 0.2) {
+        const vn = d.car.vx * g.nx + d.car.vz * g.nz;
         if (vn > 2) {
-          d.car.vx -= (dx / dist) * vn * 1.2;
-          d.car.vz -= (dz / dist) * vn * 1.2;
-          this.hitCar(c, (c.traffic.x + d.car.x) / 2, d.car.y + 0.8, (c.traffic.z + d.car.z) / 2);
+          d.car.vx -= g.nx * vn * 1.2;
+          d.car.vz -= g.nz * vn * 1.2;
+          this.hitCar(c, (t.x + d.car.x) / 2, d.car.y + 0.8, (t.z + d.car.z) / 2);
           this.cb.shake(0.3);
         }
         // Keep apart.
-        d.car.x -= (dx / dist) * (3 - dist) * 0.5;
-        d.car.z -= (dz / dist) * (3 - dist) * 0.5;
+        d.car.x -= g.nx * (0.2 - g.gap) * 0.5;
+        d.car.z -= g.nz * (0.2 - g.gap) * 0.5;
       }
     }
   }
@@ -990,6 +1105,8 @@ export class World {
           view: null,
           model: 'sports',
           color: '#e3242b',
+          riderSeed: -1,
+          rider: null,
           stunned: 0,
           siren: false,
           thiefCrime: c.id,
@@ -1272,23 +1389,36 @@ export class World {
       if (c.stunned > 0) {
         c.stunned -= dt;
         t.speed = Math.max(0, t.speed - 20 * dt);
+        if (c.model === 'moped' && c.stunned > 100) {
+          c.hp -= dt;
+          if (c.hp <= 0) {
+            this.fx.puff(t.x, 0.6, t.z, 16, new THREE.Color(0.75, 0.75, 0.78));
+            t.x = px + 1e5; // far away: removed below
+          }
+        }
         if (c.stunned <= 0 && c.thiefCrime === -1) c.stunned = 0;
       } else {
         // What is in front of us?
         const fx = Math.sin(t.yaw);
         const fz = Math.cos(t.yaw);
         let ahead = Infinity;
-        const look = (x: number, z: number, width: number) => {
+        // Long vehicles (buses) keep more room: `extra` is how much longer than two cars.
+        const myHalf = vehicleSpec(c.model).half;
+        const look = (x: number, z: number, width: number, otherHalf = 2.3) => {
           const dx = x - t.x;
           const dz = z - t.z;
           const along = dx * fx + dz * fz;
           const side = Math.abs(-dx * fz + dz * fx);
-          if (along > 0 && along < 30 && side < width) ahead = Math.min(ahead, along);
+          const extra = Math.max(0, myHalf + otherHalf - 4.6);
+          if (along > 0 && along < 30 + extra && side < width)
+            ahead = Math.min(ahead, along - extra);
         };
-        for (const o of this.cars) if (o !== c) look(o.traffic.x, o.traffic.z, 1.6);
-        for (const p of this.parked) look(p.car.x, p.car.z, 1.8);
-        for (const a of this.ambulances.obstacles()) look(a.x, a.z, 2);
-        if (this.driving) look(this.driving.car.x, this.driving.car.z, 1.8);
+        for (const o of this.cars)
+          if (o !== c) look(o.traffic.x, o.traffic.z, 1.6, vehicleSpec(o.model).half);
+        for (const p of this.parked) look(p.car.x, p.car.z, 1.8, p.car.spec.half);
+        for (const a of this.ambulances.obstacles()) look(a.x, a.z, 2, 2.9);
+        if (this.driving)
+          look(this.driving.car.x, this.driving.car.z, 1.8, this.driving.car.spec.half);
         if (onFoot && player.pos.y < 2) look(px, pz, 1.6);
         for (const p of this.people) if (isOnRoad(p.x, p.z)) look(p.x, p.z, 1.4);
         if (c.thiefCrime >= 0) ahead = Infinity; // the thief doesn't stop for anyone
@@ -1326,6 +1456,7 @@ export class World {
         return true;
       }
       if (far && c.view) {
+        this.releaseRider(c);
         this.releaseCarView(c.view);
         c.view = null;
       }
@@ -1333,7 +1464,10 @@ export class World {
     });
     // Views
     for (const c of this.cars) {
-      if (!c.view) c.view = this.carView(c.model, c.color);
+      if (!c.view) {
+        c.view = this.carView(c.model, c.color);
+        c.view.fallen = c.model === 'moped' && c.stunned > 100;
+      }
       c.view.update(
         c.traffic.x,
         0,
@@ -1343,6 +1477,8 @@ export class World {
         c.traffic.turn ? 0.3 : 0,
         dt,
       );
+      if (c.model === 'moped')
+        this.updateRider(c, dt, Math.hypot(c.traffic.x - px, c.traffic.z - pz));
       if (c.thiefCrime >= 0) {
         const sc = this.scenes.get(c.thiefCrime);
         if (sc) {

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { Mode } from '../logic/player';
 import { poseFor, type AnimInput, type AnimMode } from './animator';
 import { outfitById, type Outfit } from '../logic/outfits';
+import { MOPED_SEAT_BACK } from './carView';
 import { CharacterView, ninjaLook, type Look, type NinjaColors } from './characters';
 
 /** The ninja's look: own colours, or a bought outfit (which brings its own colours). */
@@ -30,6 +31,8 @@ export interface NinjaState {
   sinceDoubleJump: number;
   attack?: AnimInput['attack'];
   hurt: number;
+  /** Riding a moped: how much it leans into the turn (radians, positive = right). */
+  ride?: number;
 }
 
 const TAIL_POINTS = 7;
@@ -170,6 +173,12 @@ export class NinjaView {
     const root = this.character.root;
     root.position.copy(s.pos);
     root.rotation.y = s.yaw;
+    const riding = s.mode === 'drive' && s.ride !== undefined;
+    if (riding) {
+      // Sit on the moped seat, a little behind its centre.
+      root.position.x -= Math.sin(s.yaw) * MOPED_SEAT_BACK;
+      root.position.z -= Math.cos(s.yaw) * MOPED_SEAT_BACK;
+    }
 
     const hSpeed = Math.hypot(s.vel.x, s.vel.z);
     let mode: AnimMode = 'idle';
@@ -193,7 +202,7 @@ export class NinjaView {
         mode = 'swim';
         break;
       case 'drive':
-        mode = 'sit';
+        mode = riding ? 'ride' : 'sit';
         break;
     }
     const stride = mode === 'walk' ? 1.4 : mode === 'sprint' ? 3.6 : 2.5;
@@ -251,7 +260,7 @@ export class NinjaView {
     this.bodyUp.lerp(wantUp, 1 - Math.exp(-10 * dt)).normalize();
     const lean = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), this.bodyUp);
     // Pivot flips around the waist, not the feet.
-    const pivot = mode === 'swim' ? 0 : 1;
+    const pivot = mode === 'swim' || riding ? 0 : 1;
     const q = lean.multiply(
       new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), this.pitch),
     );
@@ -260,6 +269,8 @@ export class NinjaView {
       const spin = ((s.attack.t - 0.05) / 0.6) * Math.PI * 4;
       q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), spin));
     }
+    // On a moped: lean into turns with it (around the wheels on the ground).
+    if (riding) q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), s.ride ?? 0);
     body.quaternion.copy(q);
     body.position.set(0, pivot, 0).sub(new THREE.Vector3(0, pivot, 0).applyQuaternion(q));
     if (mode === 'swim') body.position.y += 0.9;

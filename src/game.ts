@@ -343,10 +343,12 @@ export class Game {
           ? { move: this.world.attack.move, t: this.world.attack.t / this.world.attack.duration }
           : undefined,
         hurt: this.world.hurtFlash,
+        ride: this.world.driving?.view.twoWheeler ? this.world.driving.view.lean : undefined,
       },
       dt,
     );
-    this.ninja.setVisible(!this.world.driving);
+    // In a car the ninja is hidden inside; on a moped you see the ninja riding it.
+    this.ninja.setVisible(!this.world.driving || this.world.driving.view.twoWheeler);
     characterUniforms.uTime.value = this.elapsed;
     // The golden outfit glitters, and leaves a trail when moving fast.
     if (this.ninja.outfit?.aura && !this.world.driving && this.state !== 'pause') {
@@ -385,6 +387,7 @@ export class Game {
         z: d.car.z,
         yaw: d.car.yaw,
         forwardSpeed: d.car.forwardSpeed,
+        half: d.car.spec.half,
       });
     } else {
       this.rig.update(dt, this.focusPoint(), this.paused ? 0 : p.speed);

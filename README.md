@@ -1,6 +1,6 @@
 # 🥷 Varjoninja
 
-Varjosaaren kaupunki tarvitsee sankaria! Olet ninja, joka heiluu köydellä pilvenpiirtäjien välissä, kiipeää seiniä ja pysäyttää roistot. Kaupungissa on autoja, ihmisiä, poliiseja ja koko ajan uusia rikoksia. Päivä vaihtuu yöksi ja yö päiväksi.
+Varjosaaren kaupunki tarvitsee sankaria! Olet ninja, joka heiluu köydellä pilvenpiirtäjien välissä, kiipeää seiniä ja pysäyttää roistot. Kaupungissa on autoja, busseja, mopoja, ihmisiä, poliiseja ja koko ajan uusia rikoksia. Päivä vaihtuu yöksi ja yö päiväksi.
 
 **Pelaa:** https://leksa-and-jumi.github.io/varjoninja/
 
@@ -18,7 +18,7 @@ Pelin suunnitteli **Julius**. Ninjan värit saa valita itse 🎨.
 | Vasen hiiri          | Isku (monta = kombo), ilmassa syöksypotku       |
 | `R`                  | Heitä shuriken                                  |
 | `G`                  | Savupommi (roistot hämmentyvät, poliisi hukkaa) |
-| `F`                  | Hyppää autoon / nouse autosta                   |
+| `F`                  | Hyppää autoon tai mopon selkään / nouse pois    |
 | `C`                  | Autossa: lähikamera / kaukokamera               |
 | `M`                  | Iso kartta                                      |
 | `H`                  | Näytä / piilota ohjeet                          |
@@ -27,6 +27,8 @@ Pelin suunnitteli **Julius**. Ninjan värit saa valita itse 🎨.
 Juokse seinää päin, niin ninja kiipeää ylös. Tabletilla on kosketusnapit.
 
 Autossa kamera pysyy auton takana ja näyttää tietä eteenpäin. Hiirellä voi katsoa sivuille, ja kamera palaa itsestään auton taakse.
+
+🛵 Mopolla ninja istuu kyydissä näkyvissä ja kallistuu mutkissa. Bussilla, maasturilla, avolava-autolla, pikkuautolla ja urheiluautolla on jokaisella oma nopeus ja ajotuntuma.
 
 **Kieli:** päävalikosta voi valita suomen 🇫🇮, englannin 🇬🇧 tai thain 🇹🇭.
 
