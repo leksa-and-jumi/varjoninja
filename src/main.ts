@@ -279,9 +279,13 @@ async function main(): Promise<void> {
     }
   }
 
+  /** When the game was last paused: the Esc that paused must not also resume. */
+  let pausedAt = 0;
+
   function pause(): void {
     if (game.state !== 'play') return;
     game.state = 'pause';
+    pausedAt = performance.now();
     menus.showPause(true);
     touchControls.show(false);
     if (document.pointerLockElement) void document.exitPointerLock();
@@ -320,10 +324,12 @@ async function main(): Promise<void> {
     const inp = game.input;
     if (game.state === 'play') {
       if (inp.pressed('pause')) pause();
-      if (inp.pressed('map')) hud.toggleBigMap();
+      else if (inp.pressed('map')) hud.toggleBigMap();
+    } else if (game.state === 'pause' && inp.pressed('pause')) {
+      // The same Esc press that just paused (also when the browser let go of the mouse
+      // first) must not resume straight away.
+      if (performance.now() - pausedAt > 400) resume();
     }
-    // Keys outside the play state.
-    if (game.state === 'pause' && inp.pressed('pause')) resume();
 
     const p = game.player;
     const w = game.world;
