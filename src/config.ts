@@ -225,7 +225,7 @@ export const MISSIONS = {
 } as const;
 
 /** Bump when public/models/*.glb change, so browsers don't keep the old files. */
-export const MODEL_VERSION = 9;
+export const MODEL_VERSION = 10;
 
 export const STORAGE = {
   profile: 'varjoninja.profile.v1',

@@ -33,14 +33,25 @@ export const REGION = {
   brows: 18,
   mouth: 19,
   iris: 20,
+  jacket: 21,
 } as const;
-const REGION_COUNT = 21;
+const REGION_COUNT = 22;
 
 export type Accessory =
-  'hairShort' | 'hairLong' | 'cap' | 'policeHat' | 'headband' | 'belt' | 'sword';
+  | 'hairShort'
+  | 'hairLong'
+  | 'hairBun'
+  | 'hairCurly'
+  | 'cap'
+  | 'policeHat'
+  | 'headband'
+  | 'belt'
+  | 'sword';
 const ACCESSORIES: Accessory[] = [
   'hairShort',
   'hairLong',
+  'hairBun',
+  'hairCurly',
   'cap',
   'policeHat',
   'headband',
@@ -56,7 +67,25 @@ export interface Look {
   width: number;
   /** Special outfit look (patterns, glow, metal). */
   style?: SuitStyle;
+  /** Everyday clothes: what kind of shirt, trousers and so on. */
+  clothes?: Clothes;
 }
+
+/** Clothing styles drawn by the shader (see CLOTHES_DETAIL). */
+export interface Clothes {
+  /** 0 = plain shirt, 1 = stripes, 2 = checks. */
+  shirtPattern: number;
+  /** Open jacket over the shirt (jacket colour in the palette). */
+  jacket: boolean;
+  /** 0 = trousers, 1 = jeans, 2 = shorts. */
+  pants: number;
+  /** Rosy cheeks and skin tone variation (people, not masks). */
+  blush: number;
+  /** Fabric detail strength (0 for smooth suits). */
+  fabric: number;
+}
+
+const PLAIN_CLOTHES: Clothes = { shirtPattern: 0, jacket: false, pants: 0, blush: 0, fabric: 0.6 };
 
 export interface SuitStyle {
   pattern: number;
@@ -144,13 +173,35 @@ export function civilianLook(seed: number): Look {
   p[REGION.hat] = new THREE.Color(rng.pick(SHIRTS));
   p[REGION.accent] = p[REGION.hat]!.clone().multiplyScalar(0.7);
   const acc: Accessory[] = [
-    rng.pick(['hairShort', 'hairShort', 'hairLong', 'hairLong', 'cap'] as const),
+    rng.pick([
+      'hairShort',
+      'hairShort',
+      'hairLong',
+      'hairLong',
+      'hairBun',
+      'hairCurly',
+      'cap',
+    ] as const),
   ];
+  const clothes: Clothes = {
+    shirtPattern: rng.pick([0, 0, 0, 1, 2]),
+    jacket: rng.chance(0.3),
+    pants: rng.pick([0, 1, 1, 1, 2]),
+    blush: 1,
+    fabric: 1,
+  };
+  p[REGION.jacket] = new THREE.Color(
+    rng.pick(['#2b2f36', '#5b4636', '#1f3550', '#6b6f75', '#7a2f2f', '#3d4a32']),
+  );
+  if (clothes.pants === 1)
+    p[REGION.bottom] = new THREE.Color(rng.pick(['#2f4f7a', '#3a5f8f', '#22344f', '#4a6d96']));
+  if (clothes.jacket) p[REGION.forearm] = p[REGION.jacket]!.clone();
   return {
     palette: p,
     accessories: acc,
     scale: rng.range(0.9, 1.06),
     width: rng.range(0.92, 1.15),
+    clothes,
   };
 }
 
@@ -165,6 +216,7 @@ export function policeLook(seed: number): Look {
   look.palette[REGION.hat] = navy.clone();
   look.palette[REGION.accent] = new THREE.Color(0x111111);
   look.accessories = ['policeHat', 'belt'];
+  look.clothes = { shirtPattern: 0, jacket: false, pants: 0, blush: 1, fabric: 1 };
   return look;
 }
 
@@ -187,28 +239,129 @@ export function thugLook(seed: number): Look {
  * y up, x = character's left), so hems and sleeves are straight lines.
  */
 const BODY_REGIONS = /* glsl */ `
+uniform vec4 uClothes; // shirt pattern, jacket, pants, blush
+uniform float uFabric;
+float armT(vec3 p) {
+  // Arm: how far from the shoulder (0) to the wrist (1).
+  vec2 sh = vec2(0.205, 1.43);
+  vec2 wr = vec2(0.52, 1.0);
+  vec2 d = wr - sh;
+  return dot(vec2(abs(p.x), p.y) - sh, d) / dot(d, d);
+}
 int bodyRegion(vec3 p) {
   float ax = abs(p.x);
+  bool jacket = uClothes.y > 0.5;
   if (p.y > 1.5 && ax < 0.09) return ${REGION.neck};
   if (p.y < 0.035) return ${REGION.sole};
   if (p.y < 0.14) return ${REGION.shoes};
   if (ax > 0.24 && p.y > 0.75) {
-    // Arm: how far from the shoulder (0) to the wrist (1).
-    vec2 sh = vec2(0.205, 1.43);
-    vec2 wr = vec2(0.52, 1.0);
-    vec2 d = wr - sh;
-    float t = dot(vec2(ax, p.y) - sh, d) / dot(d, d);
+    float t = armT(p);
     if (t > 1.0) return ${REGION.hands};
     if (t > 0.48) return ${REGION.forearm};
-    return ${REGION.top};
+    return jacket ? ${REGION.jacket} : ${REGION.top};
   }
+  // Shorts end above the knee.
+  if (uClothes.z > 1.5 && p.y < 0.6) return ${REGION.skin};
   if (p.y < 0.9) return ${REGION.bottom};
-  if (p.y < 0.985) return ${REGION.belt};
+  if (p.y < 0.985) return jacket ? ${REGION.jacket} : ${REGION.belt};
+  // Open jacket: the shirt shows in a strip down the front.
+  if (jacket && !(p.z > 0.02 && ax < 0.055 + (p.y - 1.0) * 0.06)) return ${REGION.jacket};
   return ${REGION.top};
 }
 `;
 
+/** Fabric, folds, seams, patterns, rosy cheeks and hair shine: details that make people look real. */
+const CLOTHES_DETAIL = /* glsl */ `
+float clothH = 0.0;
+float hairShine = 0.0;
+{
+  vec3 p = vRest;
+  float ax = abs(p.x);
+  // Fade fine detail out when it would be smaller than a pixel.
+  float fine = 1.0 - smoothstep(0.004, 0.02, length(fwidth(p)));
+  bool shirt = cRegion == ${REGION.top} || (cRegion == ${REGION.forearm} && uClothes.y < 0.5);
+  bool jacketPart = cRegion == ${REGION.jacket};
+  bool trousers = cRegion == ${REGION.bottom};
+  if ((shirt || jacketPart || trousers) && uFabric > 0.0) {
+    // Woven fabric.
+    float weave = sin(p.x * 900.0) * sin(p.y * 900.0 + p.z * 900.0);
+    diffuseColor.rgb *= 1.0 + 0.035 * weave * fine * uFabric;
+    // Folds: around the waist, at the elbows and behind the knees.
+    float waist = smoothstep(0.16, 0.0, abs(p.y - 1.03)) * sin(p.y * 160.0 + sin(p.x * 30.0) * 2.0);
+    float t = armT(p);
+    float elbow = (ax > 0.24) ? smoothstep(0.14, 0.0, abs(t - 0.5)) * sin(t * 90.0 + p.z * 40.0) : 0.0;
+    float knee = trousers ? smoothstep(0.12, 0.0, abs(p.y - 0.5)) * sin(p.y * 140.0 + p.x * 20.0) : 0.0;
+    float ankle = trousers ? smoothstep(0.1, 0.0, p.y - 0.16) * sin(p.y * 200.0 + p.z * 30.0) : 0.0;
+    clothH = (waist * 0.6 + elbow + knee * 0.8 + ankle * 0.7) * uFabric;
+    diffuseColor.rgb *= 1.0 - 0.07 * max(0.0, -clothH);
+    // Seams: down the sides and over the shoulders.
+    float side = (1.0 - smoothstep(0.0, 0.006, abs(p.z))) * step(0.12, ax) * step(ax, 0.25);
+    float shoulder = (1.0 - smoothstep(0.0, 0.006, abs(p.y - 1.445))) * step(0.12, ax) * step(ax, 0.24);
+    diffuseColor.rgb *= 1.0 - 0.25 * max(side, shoulder) * fine * uFabric;
+  }
+  if (shirt) {
+    // Collar and stripes or checks.
+    float collar = smoothstep(1.465, 1.485, p.y) * step(ax, 0.1);
+    diffuseColor.rgb *= 1.0 - 0.18 * collar;
+    if (uClothes.x > 0.5 && uClothes.x < 1.5) {
+      diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.55 + 0.35, step(0.5, fract(p.y * 18.0)) * 0.6);
+    } else if (uClothes.x > 1.5) {
+      float c = step(0.5, fract(p.y * 14.0)) + step(0.5, fract((p.x + p.z) * 14.0));
+      diffuseColor.rgb *= 0.75 + 0.18 * c;
+    }
+  }
+  if (jacketPart) {
+    // Jacket edge along the opening, and slightly shinier fabric.
+    float edge = 1.0 - smoothstep(0.0, 0.01, abs(ax - (0.055 + (p.y - 1.0) * 0.06)));
+    diffuseColor.rgb *= 1.0 - 0.3 * edge * step(0.02, p.z);
+  }
+  if (trousers && uClothes.z > 0.5 && uClothes.z < 1.5) {
+    // Jeans: diagonal twill, lighter worn fronts and orange stitching on the outer seam.
+    float twill = sin((p.y + p.x + p.z) * 700.0);
+    diffuseColor.rgb *= 1.0 + 0.06 * twill * fine;
+    float wear = smoothstep(0.0, 0.08, p.z) * (smoothstep(0.25, 0.5, p.y) * smoothstep(0.85, 0.55, p.y));
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.45 + 0.05, wear * 0.45);
+    float stitch = (1.0 - smoothstep(0.0, 0.004, abs(p.z - 0.004))) * step(0.13, ax) * step(0.5, fract(p.y * 120.0));
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.75, 0.5, 0.2), stitch * fine * 0.8);
+  }
+  if (cRegion == ${REGION.shoes}) {
+    // Sneakers: a white sole band and laces on top.
+    float band = smoothstep(0.035, 0.04, p.y) * smoothstep(0.06, 0.055, p.y);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92), band);
+    float laces = step(0.06, p.y) * step(p.y, 0.12) * step(0.03, p.z) * step(0.5, fract(p.y * 90.0)) * step(abs(abs(p.x) - 0.11), 0.018);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95), laces * fine * 0.7);
+  }
+  // Skin: rosy cheeks (not on masks).
+  if (uClothes.w > 0.0 && (cRegion == ${REGION.head} || cRegion == ${REGION.face} || cRegion == ${REGION.skin} || cRegion == ${REGION.neck})) {
+    vec2 cheekL = vec2(p.x - 0.055, p.y - 1.665);
+    vec2 cheekR = vec2(p.x + 0.055, p.y - 1.665);
+    float blush = (exp(-dot(cheekL, cheekL) / 0.0006) + exp(-dot(cheekR, cheekR) / 0.0006)) * smoothstep(0.03, 0.09, p.z);
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.12, 0.82, 0.8), blush * 0.55 * uClothes.w);
+  }
+  if (cRegion == ${REGION.hair}) {
+    // Strands: fine lines running from the crown, and a soft shine.
+    float a = atan(p.x, p.z);
+    float strands = sin(a * 120.0 + p.y * 30.0) * 0.5 + 0.5;
+    diffuseColor.rgb *= 0.82 + 0.3 * strands * fine;
+    hairShine = 1.0;
+  }
+}
+`;
+
 /** Outfit patterns on the suit (tiger stripes, lightning, dragon scales, golden light). */
+/** Bump the surface normal by a height value (folds), using screen-space derivatives. */
+const BUMP = /* glsl */ `
+vec3 clothBump(vec3 pos, vec3 n, float h) {
+  vec3 dx = dFdx(pos);
+  vec3 dy = dFdy(pos);
+  vec3 r1 = cross(dy, n);
+  vec3 r2 = cross(n, dx);
+  float det = dot(dx, r1);
+  vec3 grad = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
+  return normalize(abs(det) * n - grad);
+}
+`;
+
 const SUIT_STYLE = /* glsl */ `
 uniform vec4 uStyle; // pattern, glow, metal, -
 uniform vec3 uPatternColor;
@@ -255,6 +408,11 @@ bool suitPart = isSuit(cRegion);
 }
 `;
 
+function clothesVector(c: Clothes | undefined): THREE.Vector4 {
+  const k = c ?? PLAIN_CLOTHES;
+  return new THREE.Vector4(k.shirtPattern, k.jacket ? 1 : 0, k.pants, k.blush);
+}
+
 function paletteMaterial(look: Look): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0 });
   const st = look.style ?? NO_STYLE;
@@ -262,11 +420,15 @@ function paletteMaterial(look: Look): THREE.MeshStandardMaterial {
     uPalette: { value: look.palette.map((c) => c.clone()) },
     uStyle: { value: new THREE.Vector4(st.pattern, st.glow, st.metal, 0) },
     uPatternColor: { value: st.patternColor.clone() },
+    uClothes: { value: clothesVector(look.clothes) },
+    uFabric: { value: (look.clothes ?? PLAIN_CLOTHES).fabric },
   };
   m.onBeforeCompile = (shader) => {
     shader.uniforms['uPalette'] = uniforms.uPalette;
     shader.uniforms['uStyle'] = uniforms.uStyle;
     shader.uniforms['uPatternColor'] = uniforms.uPatternColor;
+    shader.uniforms['uClothes'] = uniforms.uClothes;
+    shader.uniforms['uFabric'] = uniforms.uFabric;
     shader.uniforms['uTime'] = characterUniforms.uTime;
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -280,15 +442,19 @@ function paletteMaterial(look: Look): THREE.MeshStandardMaterial {
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        `#include <common>\nflat varying float vRegion;\nvarying vec3 vRest;\nuniform vec3 uPalette[${REGION_COUNT}];\n${BODY_REGIONS}\n${SUIT_STYLE}`,
+        `#include <common>\nflat varying float vRegion;\nvarying vec3 vRest;\nuniform vec3 uPalette[${REGION_COUNT}];\n${BODY_REGIONS}\n${SUIT_STYLE}\n${BUMP}`,
       )
       .replace(
         '#include <color_fragment>',
-        `#include <color_fragment>\nint cRegion = vRegion > 29.5 ? bodyRegion(vRest) : int(clamp(floor(vRegion), 0.0, ${REGION_COUNT - 1}.0));\ndiffuseColor.rgb *= uPalette[cRegion];\n${SUIT_COLOR}`,
+        `#include <color_fragment>\nint cRegion = vRegion > 29.5 ? bodyRegion(vRest) : int(clamp(floor(vRegion), 0.0, ${REGION_COUNT - 1}.0));\ndiffuseColor.rgb *= uPalette[cRegion];\n${CLOTHES_DETAIL}\n${SUIT_COLOR}`,
       )
       .replace(
         '#include <metalnessmap_fragment>',
-        `#include <metalnessmap_fragment>\nif (suitPart && uStyle.z > 0.0) { metalnessFactor = uStyle.z; roughnessFactor = mix(roughnessFactor, 0.28, uStyle.z); }`,
+        `#include <metalnessmap_fragment>\nif (suitPart && uStyle.z > 0.0) { metalnessFactor = uStyle.z; roughnessFactor = mix(roughnessFactor, 0.28, uStyle.z); }\nif (hairShine > 0.0) roughnessFactor = 0.42;\nif (cRegion == ${REGION.eyeWhite} || cRegion == ${REGION.iris} || cRegion == ${REGION.eyes}) roughnessFactor = 0.15;\nif (cRegion == ${REGION.mouth}) roughnessFactor = 0.45;`,
+      )
+      .replace(
+        '#include <normal_fragment_maps>',
+        '#include <normal_fragment_maps>\nif (clothH != 0.0) normal = clothBump(-vViewPosition, normal, clothH * 0.004);',
       )
       .replace(
         '#include <emissivemap_fragment>',
@@ -562,6 +728,12 @@ export class CharacterView {
     const st = look.style ?? NO_STYLE;
     s.uStyle.value.set(st.pattern, st.glow, st.metal, 0);
     s.uPatternColor.value.copy(st.patternColor);
+    const c = this.material.userData['style'] as {
+      uClothes: { value: THREE.Vector4 };
+      uFabric: { value: number };
+    };
+    c.uClothes.value.copy(clothesVector(look.clothes));
+    c.uFabric.value = (look.clothes ?? PLAIN_CLOTHES).fabric;
     for (const [name, obj] of this.accessories) obj.visible = look.accessories.includes(name);
     this.endRagdoll();
   }

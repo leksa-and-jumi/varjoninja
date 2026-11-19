@@ -448,6 +448,43 @@ def build_character():
         set_region_uv(tail, lambda v: HAIR)
         return joined([base, tail], 'hairLong')
 
+    def hair_bun():
+        base = hair_short()
+        # A round bun on the back of the head.
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=20, ring_count=12, radius=0.048, location=(0, 0.13, 1.79))
+        bun = bpy.context.active_object
+        bun.scale = (1.0, 0.9, 0.9)
+        bpy.ops.object.transform_apply(scale=True)
+        bpy.ops.object.shade_smooth()
+        set_region_uv(bun, lambda v: HAIR)
+        return joined([base, bun], 'hairBun')
+
+    def hair_curly():
+        base = hair_short()
+        # Curls: small round lumps all over the top and back.
+        curls = [base]
+        rng_state = [12345]
+
+        def rnd():
+            rng_state[0] = (rng_state[0] * 1103515245 + 12345) % 2147483648
+            return rng_state[0] / 2147483648
+
+        for k in range(70):
+            # Even spread over the upper back half of a sphere.
+            u = rnd()
+            phi = math.acos(1 - u * 1.1)
+            theta = rnd() * math.pi * 2
+            d = Vector((math.sin(phi) * math.cos(theta), math.sin(phi) * math.sin(theta), math.cos(phi)))
+            if d.y < -0.25 and d.z < 0.55:
+                continue  # keep the forehead free
+            loc = Vector((0, 0.012, 1.722)) + Vector((d.x * 0.124, d.y * 0.13, d.z * 0.128))
+            bpy.ops.mesh.primitive_uv_sphere_add(segments=10, ring_count=6, radius=0.017 + rnd() * 0.008, location=loc)
+            c = bpy.context.active_object
+            bpy.ops.object.shade_smooth()
+            set_region_uv(c, lambda v: HAIR)
+            curls.append(c)
+        return joined(curls, 'hairCurly')
+
     def cap():
         bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=12, radius=0.13, location=(0, 0.01, 1.73))
         dome = bpy.context.active_object
@@ -524,6 +561,8 @@ def build_character():
 
     acc.append(accessory('hairShort', 'head', hair_short, rig))
     acc.append(accessory('hairLong', 'head', hair_long, rig))
+    acc.append(accessory('hairBun', 'head', hair_bun, rig))
+    acc.append(accessory('hairCurly', 'head', hair_curly, rig))
     acc.append(accessory('cap', 'head', cap, rig))
     acc.append(accessory('policeHat', 'head', police_hat, rig))
     acc.append(accessory('headband', 'head', headband, rig))
