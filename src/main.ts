@@ -19,6 +19,7 @@ import {
   MODES,
   makeRoomCode,
   normalizeRoomCode,
+  parseRoomCode,
   isValidRoomCode,
   roomSeed,
   type NetColors,
@@ -33,6 +34,7 @@ import { buyOutfit, outfitById } from './logic/outfits';
 import { setLang, t } from './i18n';
 import { Menus } from './ui/menus';
 import { isTouchDevice, TouchControls } from './ui/touch';
+import { isTyping } from './ui/input';
 
 const toNet = (c: NinjaColors, outfit: string | null): NetColors =>
   outfit ? [c.suit, c.accent, c.mask, outfit] : [c.suit, c.accent, c.mask];
@@ -50,8 +52,8 @@ async function main(): Promise<void> {
     play: () => startPlaying(null),
     host: () => startPlaying(makeRoomCode()),
     join: (code) => {
-      const c = normalizeRoomCode(code);
-      if (!isValidRoomCode(c)) {
+      const c = parseRoomCode(code);
+      if (!c) {
         menus.setJoinError(t('joinError'));
         return;
       }
@@ -397,6 +399,7 @@ async function main(): Promise<void> {
   game.onSmoke = (x, y, z) => room?.smoke(x, y, z);
 
   window.addEventListener('keydown', (e) => {
+    if (isTyping(e)) return;
     // T or Enter opens the chat when a friend is in the room.
     if (
       (e.code === 'KeyT' || e.code === 'Enter') &&
